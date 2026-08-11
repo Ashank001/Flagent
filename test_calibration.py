@@ -21,9 +21,11 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
+# pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
 load_dotenv()
 
+# pyrefly: ignore [missing-import]
 from deviation_scorer import score_session
 
 

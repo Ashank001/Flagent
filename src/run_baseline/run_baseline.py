@@ -1,45 +1,81 @@
-"""
-run_baseline — Lambda handler (placeholder)
-
-Runs the agent against all synthetic scenarios and records the behavioural
-fingerprint: tool call frequency distribution, average response length,
-typical tool call sequences, and data access patterns.
-Uses Google Gemini (free tier) via the google-genai SDK.
-
-POST /run-baseline
-Body: { "agent_id": str }
-"""
-
 import json
+import traceback
+import sys
 import os
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from baseline_recorder import run_baseline
 
 def handler(event, context):
-    """Run baseline fingerprinting against synthetic scenarios."""
+    """
+    Run the baseline recorder against all scenarios.
+    
+    NOTE: This is a long-running operation (~5-10 min with rate limiting).
+    API Gateway has a hard 29s timeout. When called via API Gateway, this
+    returns the pre-computed baseline fingerprint. For a fresh baseline run,
+    invoke the Lambda directly: aws lambda invoke --function-name ps41-run-baseline
+    """
     try:
-        body = json.loads(event.get("body", "{}"))
-        agent_id = body.get("agent_id")
-
-        if not agent_id:
-            return _response(400, {"error": "agent_id is required"})
-
-        # TODO: Sprint 3 — fetch stored scenarios for agent_id,
-        # execute the agent against each via Gemini, record behavioural
-        # fingerprint (tool call frequency, response length stats,
-        # call sequences, data access patterns) into AgentBaselines table.
-
-        return _response(200, {
-            "message": "placeholder — baseline recording not yet implemented",
-            "agent_id": agent_id,
-        })
-
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Check for pre-computed baseline first (fast path for API Gateway)
+        baseline_path = os.path.join(current_dir, "..", "baseline_output.json")
+        if os.path.exists(baseline_path):
+            with open(baseline_path, "r", encoding="utf-8") as f:
+                output = json.load(f)
+            return {
+                "statusCode": 200,
+                "headers": {
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Headers": "Content-Type",
+                    "Access-Control-Allow-Methods": "OPTIONS,POST"
+                },
+                "body": json.dumps({
+                    "fingerprint": output.get("fingerprint", {}),
+                    "scenario_count": output.get("scenario_count", 0),
+                    "source": "cached",
+                    "status": "Baseline fingerprint loaded successfully"
+                })
+            }
+        
+        # Fall back to live generation (will timeout via API Gateway)
+        scenarios_path = os.path.join(current_dir, "..", "scenarios_output.json")
+        if not os.path.exists(scenarios_path):
+            return {
+                "statusCode": 400,
+                "headers": {
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Headers": "Content-Type",
+                    "Access-Control-Allow-Methods": "OPTIONS,POST"
+                },
+                "body": json.dumps({"error": "scenarios_output.json not found. Call /generate-scenarios first."})
+            }
+        
+        output = run_baseline(scenarios_path)
+            
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Allow-Methods": "OPTIONS,POST"
+            },
+            "body": json.dumps({
+                "fingerprint": output.get("fingerprint", {}),
+                "scenario_count": output.get("scenario_count", 0),
+                "source": "generated",
+                "status": "Baseline recorded successfully"
+            })
+        }
     except Exception as e:
-        return _response(500, {"error": str(e)})
-
-
-def _response(status_code, body):
-    return {
-        "statusCode": status_code,
-        "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(body),
-    }
+        traceback.print_exc()
+        return {
+            "statusCode": 500,
+            "headers": {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Allow-Methods": "OPTIONS,POST"
+            },
+            "body": json.dumps({"error": str(e)})
+        }

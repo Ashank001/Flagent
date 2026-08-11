@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flagent — Agent Behavioral Baseline Monitor</title>
+    <meta name="description" content="PS-4.1 Agent Behavioral Baseline Builder Dashboard — Monitor AI agent behavior, detect anomalies, and track baseline drift in real-time.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #111827;
+            --bg-card: rgba(17, 24, 39, 0.7);
+            --border: rgba(99, 102, 241, 0.15);
+            --border-hover: rgba(99, 102, 241, 0.4);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-indigo: #6366f1;
+            --accent-violet: #8b5cf6;
+            --accent-cyan: #06b6d4;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-red: #ef4444;
+            --gradient-main: linear-gradient(135deg, #6366f1, #8b5cf6, #06b6d4);
+            --gradient-card: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.05));
+            --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.15);
+            --radius: 16px;
+            --radius-sm: 10px;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: 
+                radial-gradient(ellipse 80% 50% at 20% 10%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse 60% 40% at 80% 80%, rgba(6, 182, 212, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse 50% 60% at 50% 50%, rgba(139, 92, 246, 0.04) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .app { position: relative; z-index: 1; }
+
+        /* Header */
+        .header {
+            padding: 24px 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            backdrop-filter: blur(20px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(10, 14, 26, 0.8);
+        }
+
+        .header-left { display: flex; align-items: center; gap: 16px; }
+
+        .logo {
+            width: 40px; height: 40px;
+            background: var(--gradient-main);
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; font-weight: 800;
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+        }
+
+        .header-title { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+        .header-subtitle { font-size: 12px; color: var(--text-muted); font-weight: 400; margin-top: 2px; }
+
+        .header-status {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 16px;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 24px;
+            font-size: 13px; font-weight: 500;
+            color: var(--accent-emerald);
+        }
+
+        .header-status .dot {
+            width: 8px; height: 8px;
+            background: var(--accent-emerald);
+            border-radius: 50%;
+            animation: pulse-dot 2s infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+            50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+        }
+
+        /* Main layout */
+        .main { padding: 32px 40px; max-width: 1440px; margin: 0 auto; }
+
+        /* Stats row */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            backdrop-filter: blur(12px);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            border-radius: var(--radius) var(--radius) 0 0;
+        }
+
+        .stat-card:nth-child(1)::before { background: var(--accent-indigo); }
+        .stat-card:nth-child(2)::before { background: var(--accent-emerald); }
+        .stat-card:nth-child(3)::before { background: var(--accent-amber); }
+        .stat-card:nth-child(4)::before { background: var(--accent-red); }
+
+        .stat-card:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-glow);
+        }
+
+        .stat-label { font-size: 12px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-value { font-size: 36px; font-weight: 800; margin: 8px 0 4px; letter-spacing: -1px; }
+        .stat-desc { font-size: 12px; color: var(--text-secondary); }
+
+        /* Grid layout */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+        .grid-2-1 { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 24px; }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 28px;
+            backdrop-filter: blur(12px);
+            transition: all 0.3s ease;
+        }
+
+        .card:hover { border-color: var(--border-hover); }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .card-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .card-icon { font-size: 18px; }
+
+        .card-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-live { background: rgba(16, 185, 129, 0.1); color: var(--accent-emerald); border: 1px solid rgba(16, 185, 129, 0.2); }
+        .badge-cached { background: rgba(99, 102, 241, 0.1); color: var(--accent-indigo); border: 1px solid rgba(99, 102, 241, 0.2); }
+
+        /* Score Gauge */
+        .gauge-container { display: flex; flex-direction: column; align-items: center; padding: 20px 0; }
+
+        .gauge-ring {
+            width: 180px; height: 180px;
+            border-radius: 50%;
+            position: relative;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        .gauge-ring svg { position: absolute; top: 0; left: 0; transform: rotate(-90deg); }
+
+        .gauge-score { font-size: 48px; font-weight: 800; letter-spacing: -2px; }
+        .gauge-label { font-size: 13px; color: var(--text-muted); margin-top: 4px; font-weight: 500; }
+
+        .gauge-classification {
+            margin-top: 16px;
+            padding: 6px 20px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .cls-normal { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); border: 1px solid rgba(16, 185, 129, 0.3); }
+        .cls-warning { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); border: 1px solid rgba(245, 158, 11, 0.3); }
+        .cls-alert { background: rgba(239, 68, 68, 0.15); color: var(--accent-red); border: 1px solid rgba(239, 68, 68, 0.3); }
+
+        /* Scorer form */
+        .scorer-form { display: flex; flex-direction: column; gap: 16px; }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .form-group input:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: var(--accent-indigo);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+
+        .form-group textarea { resize: vertical; min-height: 60px; font-family: 'Courier New', monospace; font-size: 13px; }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+
+        .btn-primary {
+            background: var(--gradient-main);
+            color: white;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-primary:active { transform: translateY(0); }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-ghost {
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--accent-indigo);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+        }
+
+        .btn-ghost:hover { background: rgba(99, 102, 241, 0.2); }
+
+        /* Presets */
+        .presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+
+        .preset-btn {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+        }
+
+        .preset-btn:hover { border-color: var(--accent-indigo); color: var(--accent-indigo); background: rgba(99, 102, 241, 0.05); }
+
+        /* Component bars */
+        .component-bars { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; }
+
+        .comp-item label { font-size: 12px; font-weight: 500; color: var(--text-secondary); display: flex; justify-content: space-between; margin-bottom: 6px; }
+
+        .comp-bar {
+            height: 8px;
+            background: rgba(30, 41, 59, 0.8);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .comp-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            width: 0;
+        }
+
+        .comp-fill.cos { background: linear-gradient(90deg, #6366f1, #818cf8); }
+        .comp-fill.big { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+        .comp-fill.len { background: linear-gradient(90deg, #06b6d4, #22d3ee); }
+
+        /* Table */
+        .table-container { overflow-x: auto; }
+
+        table { width: 100%; border-collapse: collapse; }
+
+        th {
+            text-align: left;
+            padding: 12px 16px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 14px 16px;
+            font-size: 13px;
+            border-bottom: 1px solid rgba(99, 102, 241, 0.05);
+            color: var(--text-secondary);
+        }
+
+        tr:hover td { background: rgba(99, 102, 241, 0.03); }
+
+        .score-pill {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .pill-normal { background: rgba(16, 185, 129, 0.12); color: var(--accent-emerald); }
+        .pill-warning { background: rgba(245, 158, 11, 0.12); color: var(--accent-amber); }
+        .pill-alert { background: rgba(239, 68, 68, 0.12); color: var(--accent-red); }
+
+        /* Fingerprint */
+        .fingerprint-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+
+        .fp-stat {
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: var(--radius-sm);
+            padding: 16px;
+            border: 1px solid rgba(99, 102, 241, 0.08);
+        }
+
+        .fp-stat-label { font-size: 11px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+        .fp-stat-value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+        .fp-stat-unit { font-size: 12px; color: var(--text-muted); font-weight: 400; }
+
+        /* Drift section */
+        .drift-timeline { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+
+        .drift-row {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 14px;
+            background: rgba(15, 23, 42, 0.4);
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            border-left: 3px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .drift-row.normal { border-left-color: var(--accent-emerald); }
+        .drift-row.warning { border-left-color: var(--accent-amber); }
+        .drift-row.alert { border-left-color: var(--accent-red); }
+        .drift-row.drift-detected { background: rgba(239, 68, 68, 0.08); border-left-color: var(--accent-red); }
+
+        .drift-session { font-weight: 600; color: var(--text-primary); min-width: 80px; }
+        .drift-score { font-weight: 600; min-width: 60px; }
+        .drift-avg { color: var(--text-muted); font-size: 12px; }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .animate-in { animation: fadeInUp 0.5s ease forwards; opacity: 0; }
+        .animate-in:nth-child(1) { animation-delay: 0.05s; }
+        .animate-in:nth-child(2) { animation-delay: 0.1s; }
+        .animate-in:nth-child(3) { animation-delay: 0.15s; }
+        .animate-in:nth-child(4) { animation-delay: 0.2s; }
+
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .spinner { animation: spin 1s linear infinite; display: inline-block; }
+
+        /* Section title */
+        .section-title {
+            font-size: 22px; font-weight: 700; margin-bottom: 24px;
+            display: flex; align-items: center; gap: 10px;
+            letter-spacing: -0.5px;
+        }
+
+        .section-title .line {
+            flex: 1; height: 1px;
+            background: linear-gradient(90deg, var(--border), transparent);
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center; padding: 40px 20px;
+            color: var(--text-muted); font-size: 14px;
+        }
+
+        .empty-state .icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+            .grid-2, .grid-2-1 { grid-template-columns: 1fr; }
+            .main { padding: 24px 20px; }
+            .header { padding: 16px 20px; }
+        }
+
+        @media (max-width: 640px) {
+            .stats-row { grid-template-columns: 1fr; }
+            .fingerprint-stats { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<div class="app">
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <div class="logo">F</div>
+            <div>
+                <div class="header-title">Flagent</div>
+                <div class="header-subtitle">Agent Behavioral Baseline Monitor — PS 4.1</div>
+            </div>
+        </div>
+        <div class="header-status">
+            <span class="dot"></span>
+            <span>API Connected</span>
+        </div>
+    </header>
+
+    <main class="main">
+        <!-- Stats Row -->
+        <div class="stats-row">
+            <div class="stat-card animate-in">
+                <div class="stat-label">Baseline Scenarios</div>
+                <div class="stat-value" id="stat-scenarios">50</div>
+                <div class="stat-desc">Synthetic test sessions</div>
+            </div>
+            <div class="stat-card animate-in">
+                <div class="stat-label">Sessions Scored</div>
+                <div class="stat-value" id="stat-scored">0</div>
+                <div class="stat-desc">Production sessions evaluated</div>
+            </div>
+            <div class="stat-card animate-in">
+                <div class="stat-label">Avg Anomaly Score</div>
+                <div class="stat-value" id="stat-avg">—</div>
+                <div class="stat-desc">Across all scored sessions</div>
+            </div>
+            <div class="stat-card animate-in">
+                <div class="stat-label">Drift Status</div>
+                <div class="stat-value" style="font-size: 24px; color: var(--accent-emerald);" id="stat-drift">STABLE</div>
+                <div class="stat-desc">No anomalous drift detected</div>
+            </div>
+        </div>
+
+        <!-- Section: Score a Session -->
+        <div class="section-title">
+            <span>⚡</span> Score a Session
+            <span class="line"></span>
+        </div>
+
+        <div class="grid-2">
+            <!-- Scorer Form -->
+            <div class="card animate-in">
+                <div class="card-header">
+                    <div class="card-title"><span class="card-icon">🎯</span> Session Trace Input</div>
+                    <span class="card-badge badge-live">Live API</span>
+                </div>
+                <div class="scorer-form">
+                    <div>
+                        <label style="font-size:12px; font-weight:600; color:var(--text-secondary); margin-bottom:8px; display:block;">Quick Presets</label>
+                        <div class="presets">
+                            <button class="preset-btn" onclick="loadPreset('normal')">🟢 Normal</button>
+                            <button class="preset-btn" onclick="loadPreset('warning')">🟡 Warning</button>
+                            <button class="preset-btn" onclick="loadPreset('alert')">🔴 Alert</button>
+                            <button class="preset-btn" onclick="loadPreset('refund-heavy')">💸 Refund Heavy</button>
+                            <button class="preset-btn" onclick="loadPreset('multi-tool')">🔧 Multi-Tool</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Tools Called (comma-separated)</label>
+                        <input type="text" id="input-tools" placeholder="lookup_order, send_email" value="lookup_order">
+                    </div>
+                    <div class="form-group">
+                        <label>Response Length (words)</label>
+                        <input type="number" id="input-length" placeholder="40" value="40">
+                    </div>
+                    <button class="btn btn-primary" id="btn-score" onclick="scoreSession()">
+                        <span id="btn-score-text">⚡ Score Session</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Score Display -->
+            <div class="card animate-in">
+                <div class="card-header">
+                    <div class="card-title"><span class="card-icon">📊</span> Anomaly Score</div>
+                </div>
+                <div class="gauge-container" id="gauge-container">
+                    <div class="gauge-ring">
+                        <svg width="180" height="180" viewBox="0 0 180 180">
+                            <circle cx="90" cy="90" r="80" fill="none" stroke="rgba(30,41,59,0.8)" stroke-width="10"/>
+                            <circle cx="90" cy="90" r="80" fill="none" stroke="url(#gaugeGrad)" stroke-width="10"
+                                stroke-dasharray="502.6" stroke-dashoffset="502.6" stroke-linecap="round" id="gauge-arc"/>
+                            <defs>
+                                <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" stop-color="#10b981"/>
+                                    <stop offset="50%" stop-color="#f59e0b"/>
+                                    <stop offset="100%" stop-color="#ef4444"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                        <span class="gauge-score" id="gauge-score">—</span>
+                    </div>
+                    <div class="gauge-label">out of 100</div>
+                    <div class="gauge-classification cls-normal" id="gauge-class" style="display:none;">NORMAL</div>
+                </div>
+                <div class="component-bars" id="comp-bars" style="display:none;">
+                    <div class="comp-item">
+                        <label><span>Cosine Distance</span> <span id="comp-cos-val">0</span></label>
+                        <div class="comp-bar"><div class="comp-fill cos" id="comp-cos" style="width:0%"></div></div>
+                    </div>
+                    <div class="comp-item">
+                        <label><span>Bigram Novelty</span> <span id="comp-big-val">0</span></label>
+                        <div class="comp-bar"><div class="comp-fill big" id="comp-big" style="width:0%"></div></div>
+                    </div>
+                    <div class="comp-item">
+                        <label><span>Length Z-Score</span> <span id="comp-len-val">0</span></label>
+                        <div class="comp-bar"><div class="comp-fill len" id="comp-len" style="width:0%"></div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section: Baseline Fingerprint -->
+        <div class="section-title">
+            <span>🧬</span> Baseline Fingerprint
+            <span class="line"></span>
+        </div>
+
+        <div class="grid-2">
+            <!-- Tool Frequency Chart -->
+            <div class="card animate-in">
+                <div class="card-header">
+                    <div class="card-title"><span class="card-icon">📈</span> Tool Frequency (Avg per Session)</div>
+                    <span class="card-badge badge-cached">Baseline</span>
+                </div>
+                <canvas id="chart-tools" height="220"></canvas>
+            </div>
+
+            <!-- Fingerprint Stats -->
+            <div class="card animate-in">
+                <div class="card-header">
+                    <div class="card-title"><span class="card-icon">📋</span> Statistical Profile</div>
+                </div>
+                <div class="fingerprint-stats">
+                    <div class="fp-stat">
+                        <div class="fp-stat-label">Avg Response Length</div>
+                        <div class="fp-stat-value" id="fp-avg-len">50.12 <span class="fp-stat-unit">words</span></div>
+                    </div>
+                    <div class="fp-stat">
+                        <div class="fp-stat-label">Std Deviation</div>
+                        <div class="fp-stat-value" id="fp-std-len">17.91 <span class="fp-stat-unit">words</span></div>
+                    </div>
+                    <div class="fp-stat">
+                        <div class="fp-stat-label">Unique Bigrams</div>
+                        <div class="fp-stat-value" id="fp-bigrams">—</div>
+                    </div>
+                    <div class="fp-stat">
+                        <div class="fp-stat-label">Tools Available</div>
+                        <div class="fp-stat-value">4</div>
+                    </div>
+                </div>
+                <div style="margin-top: 20px;">
+                    <label style="font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; display:block;">Top Bigram Patterns</label>
+                    <div id="bigram-list" style="display:flex; flex-direction:column; gap:6px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section: Session History -->
+        <div class="section-title">
+            <span>📜</span> Session History
+            <span class="line"></span>
+        </div>
+
+        <div class="card animate-in" style="margin-bottom: 24px;">
+            <div class="card-header">
+                <div class="card-title"><span class="card-icon">📊</span> Score Distribution</div>
+                <span class="card-badge badge-live" id="history-count">0 sessions</span>
+            </div>
+            <canvas id="chart-history" height="120"></canvas>
+        </div>
+
+        <div class="card animate-in" style="margin-bottom:24px;">
+            <div class="card-header">
+                <div class="card-title"><span class="card-icon">🗂️</span> Scored Sessions</div>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Session ID</th>
+                            <th>Tools Called</th>
+                            <th>Score</th>
+                            <th>Classification</th>
+                            <th>Cosine</th>
+                            <th>Bigram</th>
+                            <th>Z-Score</th>
+                        </tr>
+                    </thead>
+                    <tbody id="session-table">
+                        <tr><td colspan="7" class="empty-state"><div class="icon">📭</div>No sessions scored yet. Use the scorer above to test.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Section: Drift Detection -->
+        <div class="section-title">
+            <span>🔄</span> Drift Detection Simulator
+            <span class="line"></span>
+        </div>
+
+        <div class="grid-2-1">
+            <div class="card animate-in">
+                <div class="card-header">
+                    <div class="card-title"><span class="card-icon">📉</span> Rolling Average Trend</div>
+                    <button class="btn btn-ghost" onclick="runDriftSimulation()" id="btn-drift">▶ Run Simulation</button>
+                </div>
+                <canvas id="chart-drift" height="200"></canvas>
+            </div>
+            <div class="card animate-in">
+                <div class="card-header">
+                    <div class="card-title"><span class="card-icon">⏱️</span> Session Timeline</div>
+                </div>
+                <div class="drift-timeline" id="drift-timeline">
+                    <div class="empty-state"><div class="icon">🔄</div>Click "Run Simulation" to simulate model drift</div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+    const API_URL = 'https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev';
+    
+    // Session history
+    let sessionHistory = [];
+    let historyChart = null;
+    let driftChart = null;
+
+    // Presets
+    const PRESETS = {
+        'normal': { tools: 'lookup_order', length: 40 },
+        'warning': { tools: 'lookup_order, send_email', length: 65 },
+        'alert': { tools: 'issue_refund, issue_refund, issue_refund, update_address', length: 110 },
+        'refund-heavy': { tools: 'lookup_order, issue_refund, issue_refund', length: 80 },
+        'multi-tool': { tools: 'lookup_order, update_address, send_email, issue_refund', length: 90 },
+    };
+
+    function loadPreset(name) {
+        const p = PRESETS[name];
+        document.getElementById('input-tools').value = p.tools;
+        document.getElementById('input-length').value = p.length;
+    }
+
+    // Build trace from form inputs
+    function buildTrace() {
+        const toolsRaw = document.getElementById('input-tools').value.trim();
+        const length = parseInt(document.getElementById('input-length').value) || 40;
+        const toolsList = toolsRaw.split(',').map(t => t.trim()).filter(t => t);
+        const counts = {};
+        toolsList.forEach(t => { counts[t] = (counts[t] || 0) + 1; });
+        return {
+            tools_called: toolsList,
+            tool_counts: counts,
+            response_length_words: length
+        };
+    }
+
+    // Score session via API
+    async function scoreSession() {
+        const btn = document.getElementById('btn-score');
+        const btnText = document.getElementById('btn-score-text');
+        btn.disabled = true;
+        btnText.innerHTML = '<span class="spinner">⏳</span> Scoring...';
+
+        try {
+            const trace = buildTrace();
+            const resp = await fetch(`${API_URL}/score-session`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trace })
+            });
+            const data = await resp.json();
+
+            if (data.error) throw new Error(data.error);
+
+            updateGauge(data.score, data.classification);
+            updateComponents(data.components);
+            addToHistory(data, trace);
+        } catch (err) {
+            alert('Error: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btnText.textContent = '⚡ Score Session';
+        }
+    }
+
+    function updateGauge(score, classification) {
+        const arc = document.getElementById('gauge-arc');
+        const scoreEl = document.getElementById('gauge-score');
+        const classEl = document.getElementById('gauge-class');
+        
+        const pct = Math.min(score / 100, 1);
+        const dashoffset = 502.6 * (1 - pct);
+        arc.style.transition = 'stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+        arc.style.strokeDashoffset = dashoffset;
+
+        scoreEl.textContent = score.toFixed(1);
+        
+        classEl.style.display = 'inline-block';
+        classEl.className = 'gauge-classification';
+        if (classification === 'normal') { classEl.classList.add('cls-normal'); classEl.textContent = 'NORMAL'; }
+        else if (classification === 'warning') { classEl.classList.add('cls-warning'); classEl.textContent = 'WARNING'; }
+        else { classEl.classList.add('cls-alert'); classEl.textContent = 'ALERT'; }
+    }
+
+    function updateComponents(comp) {
+        document.getElementById('comp-bars').style.display = 'block';
+        
+        setTimeout(() => {
+            document.getElementById('comp-cos').style.width = Math.min(comp.cosine_distance, 100) + '%';
+            document.getElementById('comp-cos-val').textContent = comp.cosine_distance.toFixed(1);
+            
+            document.getElementById('comp-big').style.width = Math.min(comp.bigram_novelty, 100) + '%';
+            document.getElementById('comp-big-val').textContent = comp.bigram_novelty.toFixed(1);
+            
+            document.getElementById('comp-len').style.width = Math.min(comp.length_zscore, 100) + '%';
+            document.getElementById('comp-len-val').textContent = comp.length_zscore.toFixed(1);
+        }, 50);
+    }
+
+    function addToHistory(data, trace) {
+        sessionHistory.unshift({ ...data, trace, timestamp: new Date() });
+        
+        document.getElementById('stat-scored').textContent = sessionHistory.length;
+        const avg = sessionHistory.reduce((s, h) => s + h.score, 0) / sessionHistory.length;
+        document.getElementById('stat-avg').textContent = avg.toFixed(1);
+        document.getElementById('history-count').textContent = sessionHistory.length + ' sessions';
+
+        renderHistoryTable();
+        renderHistoryChart();
+    }
+
+    function renderHistoryTable() {
+        const tbody = document.getElementById('session-table');
+        tbody.innerHTML = sessionHistory.map(s => {
+            const pillClass = s.classification === 'normal' ? 'pill-normal' : s.classification === 'warning' ? 'pill-warning' : 'pill-alert';
+            const tools = s.trace.tools_called.join(', ');
+            return `<tr>
+                <td style="font-family:monospace;font-size:11px;color:var(--text-muted);">${s.session_id.slice(0,8)}…</td>
+                <td>${tools}</td>
+                <td style="font-weight:700;">${s.score.toFixed(1)}</td>
+                <td><span class="score-pill ${pillClass}">${s.classification.toUpperCase()}</span></td>
+                <td>${s.components.cosine_distance.toFixed(1)}</td>
+                <td>${s.components.bigram_novelty.toFixed(1)}</td>
+                <td>${s.components.length_zscore.toFixed(1)}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    function renderHistoryChart() {
+        const ctx = document.getElementById('chart-history').getContext('2d');
+        if (historyChart) historyChart.destroy();
+
+        const scores = [...sessionHistory].reverse().map(s => s.score);
+        const colors = scores.map(s => s < 30 ? 'rgba(16,185,129,0.7)' : s < 70 ? 'rgba(245,158,11,0.7)' : 'rgba(239,68,68,0.7)');
+
+        historyChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: scores.map((_, i) => `#${i + 1}`),
+                datasets: [{
+                    data: scores,
+                    backgroundColor: colors,
+                    borderRadius: 6,
+                    borderSkipped: false,
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, max: 100, grid: { color: 'rgba(99,102,241,0.06)' }, ticks: { color: '#64748b', font: { size: 11 } } },
+                    x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 11 } } }
+                }
+            }
+        });
+    }
+
+    // Drift simulation
+    const DRIFT_SESSIONS = [
+        { tools_called: ['lookup_order'], tool_counts: { lookup_order: 1 }, response_length_words: 40 },
+        { tools_called: ['lookup_order'], tool_counts: { lookup_order: 1 }, response_length_words: 35 },
+        { tools_called: ['lookup_order'], tool_counts: { lookup_order: 1 }, response_length_words: 42 },
+        { tools_called: ['lookup_order', 'issue_refund'], tool_counts: { lookup_order: 1, issue_refund: 1 }, response_length_words: 60 },
+        { tools_called: ['issue_refund', 'send_email'], tool_counts: { issue_refund: 1, send_email: 1 }, response_length_words: 65 },
+        { tools_called: ['issue_refund', 'issue_refund'], tool_counts: { issue_refund: 2 }, response_length_words: 80 },
+        { tools_called: ['lookup_order', 'issue_refund', 'send_email'], tool_counts: { lookup_order: 1, issue_refund: 1, send_email: 1 }, response_length_words: 70 },
+        { tools_called: ['issue_refund', 'issue_refund', 'send_email'], tool_counts: { issue_refund: 2, send_email: 1 }, response_length_words: 90 },
+        { tools_called: ['issue_refund', 'update_address'], tool_counts: { issue_refund: 1, update_address: 1 }, response_length_words: 75 },
+        { tools_called: ['issue_refund', 'send_email', 'send_email'], tool_counts: { issue_refund: 1, send_email: 2 }, response_length_words: 85 },
+    ];
+
+    async function runDriftSimulation() {
+        const btn = document.getElementById('btn-drift');
+        btn.disabled = true;
+        btn.textContent = '⏳ Running...';
+
+        const timeline = document.getElementById('drift-timeline');
+        timeline.innerHTML = '';
+
+        const scores = [];
+        const rollingAvgs = [];
+        let consecutiveHigh = 0;
+        let driftDetected = false;
+
+        for (let i = 0; i < DRIFT_SESSIONS.length; i++) {
+            try {
+                const resp = await fetch(`${API_URL}/score-session`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ trace: DRIFT_SESSIONS[i] })
+                });
+                const data = await resp.json();
+                scores.push(data.score);
+
+                let avg = null;
+                if (scores.length >= 5) {
+                    avg = scores.slice(-5).reduce((a, b) => a + b, 0) / 5;
+                    rollingAvgs.push(avg);
+                    if (avg > 45) consecutiveHigh++;
+                    else consecutiveHigh = 0;
+                    if (consecutiveHigh >= 3) driftDetected = true;
+                } else {
+                    rollingAvgs.push(null);
+                }
+
+                const cls = data.classification;
+                const row = document.createElement('div');
+                row.className = `drift-row ${cls} ${driftDetected && consecutiveHigh >= 3 ? 'drift-detected' : ''}`;
+                row.innerHTML = `
+                    <span class="drift-session">Session ${i + 1}</span>
+                    <span class="drift-score" style="color: ${cls === 'normal' ? 'var(--accent-emerald)' : cls === 'warning' ? 'var(--accent-amber)' : 'var(--accent-red)'}">
+                        ${data.score.toFixed(1)}
+                    </span>
+                    <span class="score-pill pill-${cls}">${cls.toUpperCase()}</span>
+                    <span class="drift-avg">${avg !== null ? 'Avg: ' + avg.toFixed(1) : 'Collecting...'}</span>
+                    ${driftDetected && consecutiveHigh === 3 && i === scores.length - 1 ? '<span style="color:var(--accent-red);font-weight:700;">🚨 DRIFT DETECTED</span>' : ''}
+                `;
+                timeline.appendChild(row);
+                row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+                renderDriftChart(scores, rollingAvgs);
+                await new Promise(r => setTimeout(r, 300));
+
+            } catch (err) {
+                console.error('Drift session error:', err);
+            }
+        }
+
+        if (driftDetected) {
+            document.getElementById('stat-drift').textContent = '⚠️ DRIFT';
+            document.getElementById('stat-drift').style.color = 'var(--accent-red)';
+        }
+
+        btn.disabled = false;
+        btn.textContent = '▶ Run Again';
+    }
+
+    function renderDriftChart(scores, avgs) {
+        const ctx = document.getElementById('chart-drift').getContext('2d');
+        if (driftChart) driftChart.destroy();
+
+        driftChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: scores.map((_, i) => `S${i + 1}`),
+                datasets: [
+                    {
+                        label: 'Session Score',
+                        data: scores,
+                        borderColor: 'rgba(99, 102, 241, 0.8)',
+                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 5,
+                        pointBackgroundColor: scores.map(s => s < 30 ? '#10b981' : s < 70 ? '#f59e0b' : '#ef4444'),
+                    },
+                    {
+                        label: 'Rolling Avg (5)',
+                        data: avgs,
+                        borderColor: 'rgba(239, 68, 68, 0.8)',
+                        borderDash: [6, 4],
+                        fill: false,
+                        tension: 0.3,
+                        pointRadius: 3,
+                    },
+                    {
+                        label: 'Drift Threshold (45)',
+                        data: scores.map(() => 45),
+                        borderColor: 'rgba(245, 158, 11, 0.4)',
+                        borderDash: [10, 5],
+                        fill: false,
+                        pointRadius: 0,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { labels: { color: '#94a3b8', font: { size: 11, family: 'Inter' } } }
+                },
+                scales: {
+                    y: { beginAtZero: true, max: 100, grid: { color: 'rgba(99,102,241,0.06)' }, ticks: { color: '#64748b' } },
+                    x: { grid: { display: false }, ticks: { color: '#64748b' } }
+                }
+            }
+        });
+    }
+
+    // Initialize baseline fingerprint
+    async function loadFingerprint() {
+        try {
+            const resp = await fetch(`${API_URL}/run-baseline`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+            const data = await resp.json();
+            const fp = data.fingerprint;
+
+            if (fp.avg_response_length) document.getElementById('fp-avg-len').innerHTML = `${fp.avg_response_length} <span class="fp-stat-unit">words</span>`;
+            if (fp.std_response_length) document.getElementById('fp-std-len').innerHTML = `${fp.std_response_length} <span class="fp-stat-unit">words</span>`;
+
+            // Tool frequency chart
+            if (fp.tool_frequency) {
+                const tools = Object.keys(fp.tool_frequency);
+                const freqs = Object.values(fp.tool_frequency);
+                const ctx = document.getElementById('chart-tools').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: tools,
+                        datasets: [{
+                            data: freqs,
+                            backgroundColor: ['rgba(99,102,241,0.6)', 'rgba(139,92,246,0.6)', 'rgba(6,182,212,0.6)', 'rgba(16,185,129,0.6)'],
+                            borderRadius: 8,
+                            borderSkipped: false,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true, grid: { color: 'rgba(99,102,241,0.06)' }, ticks: { color: '#64748b', font: { size: 11 } } },
+                            x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11, family: 'Inter' } } }
+                        }
+                    }
+                });
+            }
+
+            // Bigrams
+            if (fp.common_bigrams) {
+                const bigrams = Object.entries(fp.common_bigrams).sort((a, b) => b[1] - a[1]).slice(0, 6);
+                document.getElementById('fp-bigrams').textContent = Object.keys(fp.common_bigrams).length;
+                const list = document.getElementById('bigram-list');
+                list.innerHTML = bigrams.map(([name, count]) => `
+                    <div style="display:flex;justify-content:space-between;padding:6px 10px;background:rgba(15,23,42,0.4);border-radius:6px;font-size:12px;">
+                        <span style="font-family:monospace;color:var(--accent-indigo);">${name}</span>
+                        <span style="color:var(--text-muted);font-weight:600;">${count}×</span>
+                    </div>
+                `).join('');
+            }
+        } catch (err) {
+            console.error('Failed to load fingerprint:', err);
+        }
+    }
+
+    // Initialize
+    loadFingerprint();
+</script>
+</body>
+</html>

@@ -27,6 +27,7 @@ from decimal import Decimal
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+# pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 

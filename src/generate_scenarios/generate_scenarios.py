@@ -1,48 +1,68 @@
-"""
-generate_scenarios — Lambda handler (placeholder)
-
-Given an agent's system prompt and tool list, generates 50 diverse synthetic
-test scenarios that exercise the agent's expected behaviour space.
-Uses Google Gemini (free tier) via the google-genai SDK.
-
-POST /generate-scenarios
-Body: { "agent_id": str, "system_prompt": str, "tools": list[str] }
-"""
-
 import json
+import traceback
+import sys
 import os
+import boto3
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from scenario_generator import generate_scenarios
 
 def handler(event, context):
-    """Generate synthetic test scenarios for an agent."""
+    """
+    Generate 50 diverse synthetic scenarios using Gemini.
+    
+    NOTE: This is a long-running operation (~2-3 min with rate limiting).
+    API Gateway has a hard 29s timeout, so when called via API Gateway this
+    will return a pre-generated scenario set. For fresh generation, invoke
+    the Lambda directly: aws lambda invoke --function-name ps41-generate-scenarios
+    """
     try:
-        body = json.loads(event.get("body", "{}"))
-        agent_id = body.get("agent_id")
-        system_prompt = body.get("system_prompt")
-        tools = body.get("tools", [])
-
-        if not agent_id or not system_prompt:
-            return _response(400, {
-                "error": "agent_id and system_prompt are required"
+        # Check if we already have pre-packaged scenarios
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        cached_path = os.path.join(current_dir, "..", "scenarios_output.json")
+        
+        if os.path.exists(cached_path):
+            with open(cached_path, "r", encoding="utf-8") as f:
+                scenarios = json.load(f)
+            return {
+                "statusCode": 200,
+                "headers": {
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Headers": "Content-Type",
+                    "Access-Control-Allow-Methods": "OPTIONS,POST"
+                },
+                "body": json.dumps({
+                    "scenarios": scenarios,
+                    "count": len(scenarios),
+                    "source": "cached"
+                })
+            }
+        
+        # If no cached file, generate fresh (will timeout via API Gateway)
+        scenarios = generate_scenarios()
+        
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Allow-Methods": "OPTIONS,POST"
+            },
+            "body": json.dumps({
+                "scenarios": scenarios,
+                "count": len(scenarios),
+                "source": "generated"
             })
-
-        # TODO: Sprint 2 — call Google Gemini to generate 50 synthetic scenarios
-        # based on the agent's system prompt and tool list.
-
-        return _response(200, {
-            "message": "placeholder — scenario generation not yet implemented",
-            "agent_id": agent_id,
-            "system_prompt_length": len(system_prompt),
-            "tool_count": len(tools),
-        })
-
+        }
     except Exception as e:
-        return _response(500, {"error": str(e)})
-
-
-def _response(status_code, body):
-    return {
-        "statusCode": status_code,
-        "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(body),
-    }
+        traceback.print_exc()
+        return {
+            "statusCode": 500,
+            "headers": {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Allow-Methods": "OPTIONS,POST"
+            },
+            "body": json.dumps({"error": str(e)})
+        }

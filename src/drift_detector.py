@@ -1,17 +1,19 @@
 # src/drift_detector.py
 import json
+import os
 from deviation_scorer import score_session
 
 # Load the local baseline we generated in Sprint 2 
-# (Update this filename if yours is named slightly different, like baseline_output.json)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+baseline_path = os.path.join(current_dir, 'baseline_output.json')
 try:
-    with open("baseline_output.json", "r") as f:
+    with open(baseline_path, "r") as f:
         baseline_fingerprint = json.load(f)
         # Handle cases where the fingerprint is nested inside another object
         if "fingerprint" in baseline_fingerprint:
             baseline_fingerprint = baseline_fingerprint["fingerprint"]
 except FileNotFoundError:
-    print("Error: Could not find baseline JSON. Please ensure the filename is correct.")
+    print(f"Error: Could not find {baseline_path}. Please ensure the filename is correct.")
     exit()
 
 # We simulate 10 sessions. 

@@ -19,7 +19,9 @@ import re
 import time
 import json
 
+# pyrefly: ignore [missing-import]
 from google import genai
+# pyrefly: ignore [missing-import]
 from google.genai import types
 
 

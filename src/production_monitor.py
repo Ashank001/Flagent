@@ -52,7 +52,8 @@ def _ensure_session_scores_table_exists(table_name: str, region: str) -> None:
 def process_session(user_message: str, agent_id: str = "mock-customer-support", system_prompt: str | None = None) -> dict:
     """Run session, score it, save to DynamoDB, and return results."""
     # 1. Load Fingerprint
-    baseline_path = os.path.join(os.path.dirname(__file__), "..", "baseline_output.json")
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    baseline_path = os.path.join(current_dir, "baseline_output.json")
     if not os.path.exists(baseline_path):
         raise RuntimeError("baseline_output.json not found. Run baseline_recorder.py first.")
         
