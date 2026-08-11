@@ -1,34 +1,43 @@
 # Build Log — PS-4.1 Agent Behavioral Baseline Builder
 
 ## Current Status
-**Sprint 1 — Scaffold complete.** SAM project structure created with 3 placeholder Lambda functions, 2 DynamoDB tables, API Gateway. LLM provider: **Google Gemini (free tier)**. Not yet deployed. Next task: implement `generate-scenarios` Lambda with Gemini API integration.
+**Sprint 2 — Mock agent + scenario generator complete.** 50 diverse synthetic scenarios generated via Gemini 3.6 Flash (free tier). Mock customer-support agent with 4 tools wired to Gemini function calling. Next task: implement baseline recorder (run agent against all 50 scenarios and record behavioural fingerprint).
 
 ## Architecture Decisions
-- **Google Gemini (free tier)** as LLM provider — using `google-genai` Python SDK. No billing or credit card required. Chosen over Anthropic/OpenAI to stay on free tier.
+- **Google Gemini (free tier)** as LLM provider — using `google-genai` Python SDK. No billing or credit card required.
+- **Model: `gemini-3.6-flash`** — `gemini-2.5-flash` is no longer available to new API keys. Discovered via `client.models.list()` and confirmed working. Model names change over time — may need revisiting.
+- **Rate limiting** — Gemini free tier capped at 15 RPM. Implemented a module-level rate limiter in `gemini_utils.py`: sleeps 4.5s between calls (~13 RPM, safely under cap). On 429 errors, waits 20s and retries once before failing.
+- **Batch scenario generation** — 4 batches of 13 scenarios each (lookup-heavy, refund-heavy, email-heavy, address+multi-tool), then deduped to 50 unique. This produces better variety than a single 50-scenario prompt.
 - **AWS SAM** for IaC — single `template.yaml` defines all resources; deploys via `sam build && sam deploy --guided` locally (no CloudShell).
-- **Python 3.12** Lambda runtime — latest SAM-supported version; good google-genai SDK support.
-- **PAY_PER_REQUEST** DynamoDB billing — avoids provisioned capacity costs during development; switch to provisioned for production if needed.
-- **Per-function `requirements.txt`** — each Lambda in `src/<function>/` has its own `requirements.txt` so SAM builds isolated packages. Avoids bloated deployment zips.
-- **API Gateway (SAM explicit)** — using `AWS::Serverless::Api` with named stage `dev` for a stable endpoint URL.
-- **GEMINI_API_KEY as env var** — passed to Lambdas at runtime. Stored in `.env` locally (gitignored), will need to be set as a Lambda env var or SSM parameter for deployment.
+- **Python 3.12** Lambda runtime — latest SAM-supported version.
+- **PAY_PER_REQUEST** DynamoDB billing — avoids provisioned capacity costs during development.
+- **Per-function `requirements.txt`** — each Lambda in `src/<function>/` has its own `requirements.txt` so SAM builds isolated packages.
+- **API Gateway (SAM explicit)** — `AWS::Serverless::Api` with stage `dev`.
+- **GEMINI_API_KEY as env var** — stored in `.env` locally (gitignored).
 
 ## Completed Components
 - [x] `BUILD_LOG.md` — `/BUILD_LOG.md` — Persistent build log. Tested: N/A
 - [x] `template.yaml` — `/template.yaml` — SAM template: 3 Lambdas, 2 DynamoDB tables, 1 API Gateway. Tested: N (not yet deployed)
-- [x] `generate_scenarios.py` — `/src/generate_scenarios/generate_scenarios.py` — Placeholder handler for POST /generate-scenarios. Tested: N
-- [x] `run_baseline.py` — `/src/run_baseline/run_baseline.py` — Placeholder handler for POST /run-baseline. Tested: N
-- [x] `score_session.py` — `/src/score_session/score_session.py` — Placeholder handler for POST /score-session. Tested: N
+- [x] `generate_scenarios.py` — `/src/generate_scenarios/generate_scenarios.py` — Placeholder Lambda handler for POST /generate-scenarios. Tested: N
+- [x] `run_baseline.py` — `/src/run_baseline/run_baseline.py` — Placeholder Lambda handler for POST /run-baseline. Tested: N
+- [x] `score_session.py` — `/src/score_session/score_session.py` — Placeholder Lambda handler for POST /score-session. Tested: N
 - [x] `requirements.txt` — `/requirements.txt` — Top-level Python deps (boto3, google-genai, python-dotenv)
 - [x] `.env.example` — `/.env.example` — Template for required environment variables
 - [x] `.gitignore` — `/.gitignore` — Excludes .env, __pycache__, .aws-sam, samconfig.toml
+- [x] `gemini_utils.py` — `/src/gemini_utils.py` — Shared Gemini client: create_client(), rate_limited_generate() with 4.5s spacing + 429 retry. Tested: Y
+- [x] `mock_agent.py` — `/src/mock_agent.py` — Mock customer-support agent with 4 tools (lookup_order, issue_refund, send_email, update_address) wired to Gemini function calling. Returns behavioural metrics per session. Tested: Y (via test_scenarios.py)
+- [x] `scenario_generator.py` — `/src/scenario_generator.py` — Generates 50 diverse scenarios in 4 batches via Gemini, dedupes to 50 unique. Tested: Y — produced 50 unique scenarios with good intent distribution
+- [x] `test_scenarios.py` — `/test_scenarios.py` — Test script: runs generator, prints all 50 scenarios + intent distribution stats. Optional `--agent` flag smoke-tests mock agent. Tested: Y
+- [x] `scenarios_output.json` — `/scenarios_output.json` — Last generated set of 50 scenarios (JSON array). Tested: N/A (output data)
 
 ## Known Issues / TODO
-- [ ] Implement `generate-scenarios` Lambda — Gemini-powered scenario generation (Sprint 2)
-- [ ] Implement `run-baseline` Lambda — execute agent against scenarios, record fingerprint (Sprint 3)
-- [ ] Implement `score-session` Lambda — compare production sessions against baseline (Sprint 4)
+- [ ] Implement baseline recorder — run mock agent against all 50 scenarios, record behavioural fingerprint (Sprint 3)
+- [ ] Implement session scorer — compare production sessions against baseline (Sprint 4)
 - [ ] Add baseline drift detector logic
 - [ ] Add per-cluster baselines (bonus)
+- [ ] Wire scenario_generator.py logic into the generate-scenarios Lambda handler
 - [ ] Run `sam build && sam deploy --guided` (final sprint)
+- [ ] Note: `gemini-3.6-flash` model name may change — if API returns 404, re-run model discovery
 
 ## AWS Resources Created
 | Resource Type | Name | Region | Notes |
@@ -42,19 +51,22 @@
 
 ## How to Run/Test Locally
 ```bash
-# Validate the SAM template
+# Set PYTHONUTF8=1 on Windows to avoid encoding issues with emoji output
+# PowerShell: $env:PYTHONUTF8="1"
+
+# Generate 50 scenarios (takes ~30s with rate limiting)
+python test_scenarios.py
+
+# Generate scenarios + smoke-test mock agent with first scenario
+python test_scenarios.py --agent
+
+# Smoke-test mock agent standalone
+python src/mock_agent.py
+
+# SAM commands (for later sprints)
 sam validate --lint
-
-# Build all functions
 sam build
-
-# Start local API for testing (requires Docker)
 sam local start-api
-
-# Invoke a single function locally
-sam local invoke GenerateScenariosFunction --event events/generate_scenarios.json
-
-# Deploy (first time — guided creates samconfig.toml)
 sam deploy --guided
 ```
 
@@ -73,15 +85,21 @@ AIVAR_PROJ/
 ├── template.yaml
 ├── requirements.txt
 ├── .env.example
+├── .env                          # (gitignored — real keys)
 ├── .gitignore
+├── test_scenarios.py             # Test: generate + print 50 scenarios
+├── scenarios_output.json         # Last generated scenario set
 └── src/
+    ├── gemini_utils.py           # Shared: client, rate limiter, retry
+    ├── mock_agent.py             # Target agent: 4 tools + Gemini FC
+    ├── scenario_generator.py     # 4-batch scenario generator
     ├── generate_scenarios/
-    │   ├── generate_scenarios.py
+    │   ├── generate_scenarios.py # Lambda handler (placeholder)
     │   └── requirements.txt
     ├── run_baseline/
-    │   ├── run_baseline.py
+    │   ├── run_baseline.py       # Lambda handler (placeholder)
     │   └── requirements.txt
     └── score_session/
-        ├── score_session.py
+        ├── score_session.py      # Lambda handler (placeholder)
         └── requirements.txt
 ```
