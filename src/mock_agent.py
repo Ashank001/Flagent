@@ -169,7 +169,7 @@ GEMINI_TOOLS = [types.Tool(function_declarations=TOOL_DECLARATIONS)]
 # Agent runner
 # ---------------------------------------------------------------------------
 
-def run_session(user_message: str, *, max_turns: int = 6) -> dict:
+def run_session(user_message: str, *, max_turns: int = 6, system_prompt: str | None = None) -> dict:
     """
     Run a single user message through the mock agent.
 
@@ -183,7 +183,7 @@ def run_session(user_message: str, *, max_turns: int = 6) -> dict:
     client = create_client()
 
     config = types.GenerateContentConfig(
-        system_instruction=SYSTEM_PROMPT,
+        system_instruction=system_prompt if system_prompt else SYSTEM_PROMPT,
         tools=GEMINI_TOOLS,
         temperature=0.2,
     )

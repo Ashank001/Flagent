@@ -1,13 +1,27 @@
 # Build Log — PS-4.1 Agent Behavioral Baseline Builder
 
 ## Current Status
-**Sprint 2 — Mock agent + scenario generator complete.** 50 diverse synthetic scenarios generated via Gemini 3.6 Flash (free tier). Mock customer-support agent with 4 tools wired to Gemini function calling. Next task: implement baseline recorder (run agent against all 50 scenarios and record behavioural fingerprint).
+**Sprint 4 — Production Monitor and Drift Detector Complete.** 
+- Built `production_monitor.py` which takes a new session, runs it through the target agent, scores it using the baseline fingerprint via `deviation_scorer`, and saves the final result to the `SessionScores` DynamoDB table.
+- Added `test_production_monitor.py` with 3 test sessions (NORMAL, WARNING, ALERT) that successfully classify in the correct anomaly tiers.
+- Built `drift_detector.py` to simulate a model update (where the agent is overly eager to issue refunds). It tracks a rolling average over 10 sessions and alerts when it crosses a threshold for 3 consecutive sessions.
+
+Next task: Deploy API Gateway and Lambdas via AWS SAM.
 
 ## Architecture Decisions
 - **Google Gemini (free tier)** as LLM provider — using `google-genai` Python SDK. No billing or credit card required.
-- **Model: `gemini-3.6-flash`** — `gemini-2.5-flash` is no longer available to new API keys. Discovered via `client.models.list()` and confirmed working. Model names change over time — may need revisiting.
-- **Rate limiting** — Gemini free tier capped at 15 RPM. Implemented a module-level rate limiter in `gemini_utils.py`: sleeps 4.5s between calls (~13 RPM, safely under cap). On 429 errors, waits 20s and retries once before failing.
-- **Batch scenario generation** — 4 batches of 13 scenarios each (lookup-heavy, refund-heavy, email-heavy, address+multi-tool), then deduped to 50 unique. This produces better variety than a single 50-scenario prompt.
+- **Model Rotation** — Due to the 20 requests/day/model limit on Gemini free tier, `gemini_utils.py` uses model rotation across 4 models (`gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-3-flash-preview`) to get 80+ daily calls. It also parses retry delays from 429 errors for smart backoff.
+- **Fingerprint Schema** — Includes:
+  - `tool_frequency`: average calls per session for each tool
+  - `common_bigrams`: counts of consecutive tool calls across sessions
+  - `avg_response_length`: average response length (in words)
+  - `std_response_length`: standard deviation of response length
+- **Scoring Formula** — 0-100 anomaly score computed from 3 weighted components:
+  1. **Cosine distance** (40%): tool-frequency vector vs baseline.
+  2. **Bigram novelty** (35%): % of session bigrams NOT in baseline.
+  3. **Length z-score** (25%): absolute z-score of session length, capped at 3 and normalized.
+  - Classification: <30 = `normal`, 30-70 = `warning`, >70 = `alert`.
+- **Production Monitor & DynamoDB** — `production_monitor.py` creates and writes to `SessionScores` with partition key `agent_id` and sort key `session_id`.
 - **AWS SAM** for IaC — single `template.yaml` defines all resources; deploys via `sam build && sam deploy --guided` locally (no CloudShell).
 - **Python 3.12** Lambda runtime — latest SAM-supported version.
 - **PAY_PER_REQUEST** DynamoDB billing — avoids provisioned capacity costs during development.
@@ -24,17 +38,20 @@
 - [x] `requirements.txt` — `/requirements.txt` — Top-level Python deps (boto3, google-genai, python-dotenv)
 - [x] `.env.example` — `/.env.example` — Template for required environment variables
 - [x] `.gitignore` — `/.gitignore` — Excludes .env, __pycache__, .aws-sam, samconfig.toml
-- [x] `gemini_utils.py` — `/src/gemini_utils.py` — Shared Gemini client: create_client(), rate_limited_generate() with 4.5s spacing + 429 retry. Tested: Y
-- [x] `mock_agent.py` — `/src/mock_agent.py` — Mock customer-support agent with 4 tools (lookup_order, issue_refund, send_email, update_address) wired to Gemini function calling. Returns behavioural metrics per session. Tested: Y (via test_scenarios.py)
-- [x] `scenario_generator.py` — `/src/scenario_generator.py` — Generates 50 diverse scenarios in 4 batches via Gemini, dedupes to 50 unique. Tested: Y — produced 50 unique scenarios with good intent distribution
-- [x] `test_scenarios.py` — `/test_scenarios.py` — Test script: runs generator, prints all 50 scenarios + intent distribution stats. Optional `--agent` flag smoke-tests mock agent. Tested: Y
-- [x] `scenarios_output.json` — `/scenarios_output.json` — Last generated set of 50 scenarios (JSON array). Tested: N/A (output data)
+- [x] `gemini_utils.py` — `/src/gemini_utils.py` — Shared Gemini client: create_client(), rate_limited_generate() with model rotation and smart 429 retry. Tested: Y
+- [x] `mock_agent.py` — `/src/mock_agent.py` — Mock customer-support agent with 4 tools (lookup_order, issue_refund, send_email, update_address) wired to Gemini function calling. Returns behavioural metrics per session. Tested: Y
+- [x] `scenario_generator.py` — `/src/scenario_generator.py` — Generates 50 diverse scenarios in 4 batches via Gemini, dedupes to 50 unique. Tested: Y
+- [x] `test_scenarios.py` — `/test_scenarios.py` — Test script: runs generator, prints all 50 scenarios + intent distribution stats. Tested: Y
+- [x] `scenarios_output.json` — `/scenarios_output.json` — Last generated set of 50 scenarios (JSON array). Tested: N/A
+- [x] `baseline_recorder.py` — `/src/baseline_recorder.py` — Takes 50 synthetic scenarios, runs mock agent on each, and saves aggregate fingerprint to DynamoDB and `baseline_output.json`. Tested: Y
+- [x] `deviation_scorer.py` — `/src/deviation_scorer.py` — Scores session anomaly (0-100) vs baseline fingerprint using Cosine Distance (40%), Bigram Novelty (35%), and Length Z-score (25%). Tested: Y
+- [x] `test_calibration.py` — `/test_calibration.py` — Validates the scoring algorithm on baseline dataset. Tested: Y (3/3 checks passed)
+- [x] `baseline_output.json` — `/baseline_output.json` — Local copy of the generated baseline fingerprint + traces.
+- [x] `production_monitor.py` — `/src/production_monitor.py` — Evaluates new sessions, scores via deviation_scorer, and saves to DynamoDB `SessionScores`.
+- [x] `test_production_monitor.py` — `/test_production_monitor.py` — Tests NORMAL/WARNING/ALERT tier classification.
+- [x] `drift_detector.py` — `/src/drift_detector.py` — Simulates prompt drift and triggers alert on rolling 5-session average > 45.
 
 ## Known Issues / TODO
-- [ ] Implement baseline recorder — run mock agent against all 50 scenarios, record behavioural fingerprint (Sprint 3)
-- [ ] Implement session scorer — compare production sessions against baseline (Sprint 4)
-- [ ] Add baseline drift detector logic
-- [ ] Add per-cluster baselines (bonus)
 - [ ] Wire scenario_generator.py logic into the generate-scenarios Lambda handler
 - [ ] Run `sam build && sam deploy --guided` (final sprint)
 - [ ] Note: `gemini-3.6-flash` model name may change — if API returns 404, re-run model discovery
