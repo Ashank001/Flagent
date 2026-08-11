@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  PS-4.1 Agent Behavioral Baseline Builder
+  Automatically establishes behavioural baselines for AI agents using synthetic
+  traffic, then monitors production sessions against them.
+  LLM provider: Google Gemini (free tier, google-genai SDK).
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 60
+    MemorySize: 256
+    Environment:
+      Variables:
+        BASELINES_TABLE: !Ref AgentBaselinesTable
+        SESSIONS_TABLE: !Ref SessionScoresTable
+
+Resources:
+  # ---------------------------------------------------------------
+  # API Gateway
+  # ---------------------------------------------------------------
+  BaselineApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: ps41-baseline-api
+      StageName: dev
+      Description: API for Agent Behavioral Baseline Builder
+
+  # ---------------------------------------------------------------
+  # Lambda Functions
+  # ---------------------------------------------------------------
+  GenerateScenariosFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ps41-generate-scenarios
+      Handler: generate_scenarios.handler
+      CodeUri: src/generate_scenarios/
+      Description: >
+        Given an agent's system prompt and tool list, generates 50 diverse
+        synthetic test scenarios via Google Gemini.
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AgentBaselinesTable
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref BaselineApi
+            Path: /generate-scenarios
+            Method: POST
+
+  RunBaselineFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ps41-run-baseline
+      Handler: run_baseline.handler
+      CodeUri: src/run_baseline/
+      Timeout: 300
+      Description: >
+        Runs the agent against all synthetic scenarios and records the behavioural
+        fingerprint — tool call frequency, response length stats, call sequences.
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AgentBaselinesTable
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref BaselineApi
+            Path: /run-baseline
+            Method: POST
+
+  ScoreSessionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ps41-score-session
+      Handler: score_session.handler
+      CodeUri: src/score_session/
+      Description: >
+        Scores a production session against the stored baseline. Flags normal,
+        warning, or alert depending on deviation thresholds.
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AgentBaselinesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionScoresTable
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref BaselineApi
+            Path: /score-session
+            Method: POST
+
+  # ---------------------------------------------------------------
+  # DynamoDB Tables
+  # ---------------------------------------------------------------
+  AgentBaselinesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: AgentBaselines
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: agent_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: agent_id
+          KeyType: HASH
+
+  SessionScoresTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: SessionScores
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: agent_id
+          AttributeType: S
+        - AttributeName: session_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: agent_id
+          KeyType: HASH
+        - AttributeName: session_id
+          KeyType: RANGE
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${BaselineApi}.execute-api.${AWS::Region}.amazonaws.com/dev/"
+  GenerateScenariosArn:
+    Description: ARN of the GenerateScenarios Lambda
+    Value: !GetAtt GenerateScenariosFunction.Arn
+  RunBaselineArn:
+    Description: ARN of the RunBaseline Lambda
+    Value: !GetAtt RunBaselineFunction.Arn
+  ScoreSessionArn:
+    Description: ARN of the ScoreSession Lambda
+    Value: !GetAtt ScoreSessionFunction.Arn
