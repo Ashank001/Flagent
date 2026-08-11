@@ -15,6 +15,7 @@ import sys
 # Add parent dir so we can import gemini_utils as a sibling module
 sys.path.insert(0, os.path.dirname(__file__))
 
+# pyrefly: ignore [missing-import]
 from google.genai import types
 from gemini_utils import create_client, rate_limited_generate
 from mock_agent import SYSTEM_PROMPT, TOOL_DECLARATIONS
@@ -210,6 +211,7 @@ def generate_scenarios(*, target_count: int = 50) -> list[str]:
 # CLI entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    # pyrefly: ignore [missing-import]
     from dotenv import load_dotenv
     load_dotenv()
 

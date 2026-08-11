@@ -19,6 +19,7 @@ import time
 # Add parent dir so we can import gemini_utils as a sibling module
 sys.path.insert(0, os.path.dirname(__file__))
 
+# pyrefly: ignore [missing-import]
 from google.genai import types
 from gemini_utils import create_client, rate_limited_generate
 
@@ -258,6 +259,7 @@ def run_session(user_message: str, *, max_turns: int = 6) -> dict:
 # Quick smoke test
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    # pyrefly: ignore [missing-import]
     from dotenv import load_dotenv
     load_dotenv()
 
