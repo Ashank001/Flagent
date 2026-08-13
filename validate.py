@@ -67,35 +67,26 @@ def main():
         {"desc": "Unexpected combo + huge length", "trace": {"tools_called": ["update_address", "issue_refund", "send_email", "update_address"], "tool_counts": {"update_address": 2, "issue_refund": 1, "send_email": 1}, "response_length_words": 180}},
     ]
     
-    total_passed = 0
-    total_tests = 0
+    sec1_p, sec1_t = run_test("SECTION 1 — Testing Normal Traffic (expect: no flag)", "normal", normal_traces)
+    sec2_p, sec2_t = run_test("SECTION 2 — Testing Moderate Anomaly (expect: warning)", "warning", warning_traces)
+    sec3_p, sec3_t = run_test("SECTION 3 — Testing Severe Anomaly (expect: ALERT)", "alert", alert_traces)
     
-    p, t = run_test("SECTION 1 — Testing Normal Traffic (expect: no flag)", "normal", normal_traces)
-    total_passed += p
-    total_tests += t
+    sec1_rate = (sec1_p / sec1_t) * 100
+    sec2_rate = (sec2_p / sec2_t) * 100
+    sec3_rate = (sec3_p / sec3_t) * 100
     
-    p, t = run_test("SECTION 2 — Testing Moderate Anomaly (expect: warning)", "warning", warning_traces)
-    total_passed += p
-    total_tests += t
+    verdict = "MET" if (sec1_rate >= 80 and sec2_rate >= 80 and sec3_rate >= 80) else "NOT MET"
     
-    p, t = run_test("SECTION 3 — Testing Severe Anomaly (expect: ALERT)", "alert", alert_traces)
-    total_passed += p
-    total_tests += t
-    
-    # Need 80% pass rate in all sections? The prompt said: "verdict based on whether all 3 sections had at least 80% pass rate."
-    # Let's just calculate overall pass rate, but check if each section had >= 80%.
-    # Actually wait, I didn't save section pass rates. I'll just do overall >= 80%? 
-    # "based on whether all 3 sections had at least 80% pass rate."
-    # I'll adjust this manually.
-    pass_rate = (total_passed / total_tests) * 100 if total_tests > 0 else 0
-    verdict = "MET" if pass_rate >= 80 else "NOT MET"
+    total_passed = sec1_p + sec2_p + sec3_p
+    total_tests = sec1_t + sec2_t + sec3_t
+    pass_rate = (total_passed / total_tests) * 100
     
     print(f"\n{'='*60}")
     print(f" FINAL SUMMARY TABLE")
     print(f"{'='*60}")
-    print(f" Section 1 (Normal):    {len(normal_traces)} tests")
-    print(f" Section 2 (Warning):   {len(warning_traces)} tests")
-    print(f" Section 3 (Alert):     {len(alert_traces)} tests")
+    print(f" Section 1 (Normal):    {sec1_p}/{sec1_t} passed ({sec1_rate:.0f}%)")
+    print(f" Section 2 (Warning):   {sec2_p}/{sec2_t} passed ({sec2_rate:.0f}%)")
+    print(f" Section 3 (Alert):     {sec3_p}/{sec3_t} passed ({sec3_rate:.0f}%)")
     print(f"------------------------------------------------------------")
     print(f" Total Passed:          {total_passed} / {total_tests} ({pass_rate:.1f}%)")
     print(f" SUCCESS CRITERIA:      {verdict}")
