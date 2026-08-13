@@ -128,6 +128,11 @@ Score: 21.51 | Class: NORMAL | Rolling Avg: 30.84
   Recommendation: Trigger a baseline refresh.
 ```
 
+✅ **LIVE GOVERNANCE DEMO (DASHBOARD UI)**
+
+Added a "Live Governance Demo" section directly to `dashboard.html`. Clicking "Run Full Demo" sequentially executes the three test scenarios from `agent_interceptor.py` using live Gemini models via the new `/run-demo` API endpoint. 
+The browser UI acts as the interceptor: it calls the agent (getting the trace), and then forwards that trace to the existing `/score-session` endpoint to get the final anomaly score and classification. The results stream in sequentially to prove the pipeline works in real-time. This mirrors the Python interceptor pattern exactly, proving it's transport-agnostic.
+
 ## Known Issues / TODO
 *(None — Project Complete)*
 

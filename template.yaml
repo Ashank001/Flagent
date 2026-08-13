@@ -104,6 +104,23 @@ Resources:
             Path: /score-session
             Method: POST
 
+  RunDemoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ps41-run-demo
+      Handler: run_demo.run_demo.handler
+      CodeUri: src/
+      Timeout: 120
+      Description: >
+        Runs a hardcoded demo scenario via Gemini agent and returns the trace.
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref BaselineApi
+            Path: /run-demo
+            Method: POST
+
 Outputs:
   ApiEndpoint:
     Description: API Gateway endpoint URL
@@ -117,3 +134,6 @@ Outputs:
   ScoreSessionArn:
     Description: ARN of the ScoreSession Lambda
     Value: !GetAtt ScoreSessionFunction.Arn
+  RunDemoArn:
+    Description: ARN of the RunDemo Lambda
+    Value: !GetAtt RunDemoFunction.Arn

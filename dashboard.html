@@ -494,6 +494,32 @@
             </div>
         </div>
 
+        <!-- Section: Live Governance Demo -->
+        <div class="section-title">
+            <span>🚀</span> Live Governance Demo
+            <span class="line"></span>
+        </div>
+        
+        <div class="card animate-in" style="margin-bottom: 32px;">
+            <div class="card-header">
+                <div class="card-title">
+                    <span class="card-icon">🤖</span> End-to-End Interceptor Demo
+                </div>
+                <button class="btn btn-primary" id="btn-run-demo" onclick="runLiveDemo()">
+                    <span id="btn-demo-text">▶ Run Full Demo</span>
+                </button>
+            </div>
+            
+            <div id="demo-scenarios-container" style="display: flex; flex-direction: column; gap: 16px;">
+                <div class="empty-state" id="demo-empty-state">
+                    <div class="icon">✨</div>
+                    Click "Run Full Demo" to execute 3 real LLM agent sessions against the live API.
+                </div>
+            </div>
+            <div id="demo-summary" style="margin-top: 20px; font-weight: 600; font-size: 14px; text-align: center; color: var(--accent-indigo); display: none;">
+            </div>
+        </div>
+
         <!-- Section: Score a Session -->
         <div class="section-title">
             <span>⚡</span> Score a Session
@@ -686,6 +712,91 @@
 <script>
     const API_URL = 'https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev';
     
+    // Live Governance Demo
+    async function runLiveDemo() {
+        const btn = document.getElementById('btn-run-demo');
+        const btnText = document.getElementById('btn-demo-text');
+        const container = document.getElementById('demo-scenarios-container');
+        const summary = document.getElementById('demo-summary');
+        
+        btn.disabled = true;
+        btnText.innerHTML = '<span class="spinner">⏳</span> Running...';
+        
+        container.innerHTML = '';
+        summary.style.display = 'none';
+        
+        let counts = { normal: 0, warning_alert: 0 };
+        
+        for (let i = 1; i <= 3; i++) {
+            const id = 'demo-scenario-' + i;
+            container.insertAdjacentHTML('beforeend', `
+                <div id="${id}" style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px; border-left: 3px solid var(--accent-indigo);">
+                    <div style="font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; margin-bottom: 8px;">Scenario ${i}</div>
+                    <div style="font-size: 14px; margin-bottom: 8px;"><span class="spinner">⏳</span> Waiting for Gemini Agent...</div>
+                </div>
+            `);
+            
+            try {
+                // Call /run-demo to get agent trace
+                const agentResp = await fetch(`${API_URL}/run-demo`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scenario_id: i })
+                });
+                const agentData = await agentResp.json();
+                
+                if (agentData.error) throw new Error(agentData.error);
+                
+                // Update loading state
+                document.getElementById(id).innerHTML = `
+                    <div style="font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; margin-bottom: 8px;">Scenario ${i} — ${agentData.description}</div>
+                    <div style="font-size: 13px; margin-bottom: 8px; color: var(--text-secondary);"><strong>User:</strong> "${agentData.user_message}"</div>
+                    <div style="font-size: 13px; margin-bottom: 8px; color: var(--text-secondary);"><strong>Agent:</strong> "${agentData.response_text}"</div>
+                    <div style="font-size: 12px; font-family: monospace; color: var(--accent-indigo); margin-bottom: 8px;">Tools: [${agentData.trace.tools_called.join(', ')}]</div>
+                    <div style="font-size: 14px; margin-bottom: 8px;" id="${id}-scoring"><span class="spinner">⏳</span> Scoring session...</div>
+                `;
+                
+                // Call /score-session with trace
+                const scoreResp = await fetch(`${API_URL}/score-session`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ trace: agentData.trace })
+                });
+                const scoreData = await scoreResp.json();
+                
+                if (scoreData.error) throw new Error(scoreData.error);
+                
+                // Update final result
+                const cls = scoreData.classification;
+                if (cls === 'normal') counts.normal++;
+                else counts.warning_alert++;
+                
+                const pillClass = cls === 'normal' ? 'pill-normal' : cls === 'warning' ? 'pill-warning' : 'pill-alert';
+                const borderColor = cls === 'normal' ? 'var(--accent-emerald)' : cls === 'warning' ? 'var(--accent-amber)' : 'var(--accent-red)';
+                
+                document.getElementById(id).style.borderLeftColor = borderColor;
+                document.getElementById(`${id}-scoring`).innerHTML = `
+                    <strong>Score: ${scoreData.score.toFixed(1)}</strong> 
+                    <span class="score-pill ${pillClass}" style="margin-left: 8px;">${cls.toUpperCase()}</span>
+                `;
+                
+                addToHistory(scoreData, agentData.trace);
+                
+            } catch (err) {
+                document.getElementById(id).innerHTML += `
+                    <div style="color: var(--accent-red); font-size: 14px; margin-top: 8px;">Error: ${err.message}</div>
+                `;
+                break;
+            }
+        }
+        
+        summary.innerHTML = `3/3 scenarios processed — Normal: ${counts.normal}, Warning/Alert: ${counts.warning_alert}`;
+        summary.style.display = 'block';
+        
+        btn.disabled = false;
+        btnText.textContent = '▶ Run Full Demo';
+    }
+
     // Session history
     let sessionHistory = [];
     let historyChart = null;
