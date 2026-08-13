@@ -1,4 +1,4 @@
-﻿# Flagent — Agent Behavioral Baseline Monitor · PS-4.1
+# Flagent — Agent Behavioral Baseline Monitor · PS-4.1
 
 > A governance layer that automatically establishes an AI agent's behavioral baseline and monitors production sessions for anomalies and drift.
 
@@ -46,7 +46,7 @@ Browser / Client
 
 The dashboard calls the live deployed API (`t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev`) — no local setup required.
 
-> **Deployed site:** [https://Ashank001.github.io/Flagent](https://Ashank001.github.io/Flagent) *(hosted via GitHub Pages from this repo — see `dashboard.html` at the repo root)*
+> **Deployed site:** [https://Ashank001.github.io/Flagent/dashboard.html](https://Ashank001.github.io/Flagent/dashboard.html) *(hosted via GitHub Pages — `dashboard.html` at the repo root)*
 
 ---
 
