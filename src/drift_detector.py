@@ -1,21 +1,9 @@
 # src/drift_detector.py
 import json
-import os
-from deviation_scorer import score_session
+import json
+import requests
 
-# Load the local baseline we generated in Sprint 2 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-baseline_path = os.path.join(current_dir, 'baseline_output.json')
-try:
-    with open(baseline_path, "r") as f:
-        baseline_fingerprint = json.load(f)
-        # Handle cases where the fingerprint is nested inside another object
-        if "fingerprint" in baseline_fingerprint:
-            baseline_fingerprint = baseline_fingerprint["fingerprint"]
-except FileNotFoundError:
-    print(f"Error: Could not find {baseline_path}. Please ensure the filename is correct.")
-    exit()
-
+API_URL = "https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev/score-session"
 # We simulate 10 sessions. 
 # Sessions 1-3 are normal (lookups). 
 # Sessions 4-10 represent the "drift" (going crazy with refunds and emails).
@@ -35,15 +23,17 @@ MOCK_DRIFT_SESSIONS = [
 
 print("======================================================================")
 print("  Drift Detector Simulation (LLM Bypassed)")
-print("  Trigger: Rolling avg > 45 for 3 consecutive sessions")
+print("  Trigger: Rolling avg > 30 for 3 consecutive sessions")
 print("======================================================================\n")
 
 rolling_window = []
 consecutive_drift_count = 0
 
 for i, session in enumerate(MOCK_DRIFT_SESSIONS, 1):
-    # Score the session against the baseline
-    score_result = score_session(session, baseline_fingerprint)
+    # Score the session against the live API
+    resp = requests.post(API_URL, json={"trace": session})
+    resp.raise_for_status()
+    score_result = resp.json()
     score = score_result["score"]
     classification = score_result["classification"]
     
@@ -57,7 +47,7 @@ for i, session in enumerate(MOCK_DRIFT_SESSIONS, 1):
     print(f"  [Session {i}] Score: {score:.1f} | Class: {classification.upper()} | Rolling Avg: {avg_score:.1f}")
     
     # Check for drift threshold
-    if avg_score > 45:
+    if avg_score > 30:
         consecutive_drift_count += 1
     else:
         consecutive_drift_count = 0
