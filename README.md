@@ -1,70 +1,158 @@
-# PS-4.1 Agent Behavioral Baseline Builder
+﻿# Flagent — Agent Behavioral Baseline Monitor · PS-4.1
 
-This project automatically establishes a behavioral baseline for an AI agent at deployment time using synthetic traffic, then monitors production against it to detect anomalies and baseline drift.
+> A governance layer that automatically establishes an AI agent's behavioral baseline and monitors production sessions for anomalies and drift.
 
-## Deployment Steps
+---
 
-Deploy this project to AWS using the AWS SAM CLI.
+## What It Does
 
-1. **Install dependencies and build the SAM application:**
-   ```bash
-   sam build
-   ```
-   *Note: If you run into Python runtime issues on Windows, you can add the `--use-container` flag if you have Docker installed, or ensure Python 3.12 is explicitly on your PATH.*
+Flagent is **not an agent itself** — it is an observability and governance layer that wraps any existing agent. It generates 50 synthetic baseline sessions at deployment time, computes a statistical behavioral fingerprint (tool-call distribution, bigram sequences, volume patterns, response length), and scores every live production session against that fingerprint in real-time. Sessions that deviate significantly trigger tiered alerts (normal → warning → 🚨 alert), and a rolling-average drift detector flags when the agent's behavior has fundamentally shifted over time.
 
-2. **Deploy the application to your AWS account:**
-   ```bash
-   sam deploy --guided
-   ```
-   Follow the prompts during the guided deployment.
-   - **Stack Name**: `ps41-baseline-builder`
-   - **AWS Region**: `ap-south-1` (or your preferred region)
-   - **Parameter GeminiApiKey**: `[Enter your Gemini API Key here]`
-   - **Confirm changes before deploy**: `Y`
-   - **Allow SAM CLI IAM role creation**: `Y`
-   - **Disable rollback**: `N`
-   - **Save arguments to configuration file**: `Y`
+---
 
-Once deployment is complete, SAM will output the `ApiEndpoint` URL for your API Gateway. Export this URL to your terminal for easy testing:
+## Architecture
+
+```
+Browser / Client
+      │
+      ▼
+ API Gateway  (ps41-baseline-api · ap-south-1)
+      │
+      ├── POST /generate-scenarios ──► Lambda: ps41-generate-scenarios
+      │                                         └── Gemini (free tier) → 50 synthetic scenarios
+      │
+      ├── POST /run-baseline ─────────► Lambda: ps41-run-baseline
+      │                                         └── mock_agent × 50 → fingerprint → DynamoDB: AgentBaselines
+      │
+      └── POST /score-session ────────► Lambda: ps41-score-session
+                                                └── deviation_scorer → DynamoDB: SessionScores
+                                                    (Cosine 20% · Bigram 20% · Volume 45% · Length 15%)
+```
+
+**Key components:** AWS Lambda · API Gateway · DynamoDB · Google Gemini (free tier) · AWS SAM
+
+---
+
+## Live Demo
+
+> **Deployed dashboard:** open `dashboard.html` directly in your browser — no server needed.
+
+1. Open `dashboard.html` in Chrome/Edge (double-click the file, or `File → Open`).
+2. Click **"Run Full Demo"** in the *Live Governance Demo* section.
+3. Watch three scenarios execute sequentially against the live API:
+   - **Test 1** (normal order lookup) → NORMAL
+   - **Test 2** (multi-tool session) → WARNING
+   - **Test 3** (mass refund loop × 12 calls) → 🚨 ALERT
+
+The dashboard calls the live deployed API (`t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev`) — no local setup required.
+
+> **Deployed site:** [https://Ashank001.github.io/Flagent](https://Ashank001.github.io/Flagent) *(hosted via GitHub Pages from this repo — see `dashboard.html` at the repo root)*
+
+---
+
+## Deployment
+
+### Prerequisites
+- AWS CLI configured (`aws configure`)
+- AWS SAM CLI installed
+- Python 3.12
+- A Gemini API key from [aistudio.google.com](https://aistudio.google.com/app/apikey) — **free tier, ~1 500 tokens/min limit; the rate limiter in `gemini_utils.py` handles this automatically with batching and back-off**
+
+### Steps
+
 ```bash
-$env:API_URL="https://<YOUR-API-ID>.execute-api.ap-south-1.amazonaws.com/dev"
+# 1. Clone and set your API key
+cp .env.example .env
+# Edit .env and set GEMINI_API_KEY=your_key_here
+
+# 2. Build the SAM application
+sam build
+
+# 3. Deploy (first time — interactive)
+sam deploy --guided
+#  Stack Name:               flagent
+#  AWS Region:               ap-south-1
+#  Parameter GeminiApiKey:  [paste your key]
+#  Confirm IAM role creation: Y
+#  Save to samconfig.toml:   Y
+
+# Subsequent deployments (uses saved config)
+sam deploy
+```
+
+SAM outputs the `ApiEndpoint` URL on completion. Export it for testing:
+
+```powershell
+$env:API_URL = "https://<YOUR-API-ID>.execute-api.ap-south-1.amazonaws.com/dev"
 ```
 
 ---
 
-## Verification Steps (Success Criteria)
+## Verification
 
-Below are the commands to hit each of the 3 API Gateway endpoints, mapped explicitly to the problem statement's success criteria.
+### 1. Automated validation suite — hits the live `/score-session` endpoint
 
-### Success Criteria #1: Generate Baselines Automatically
-*“Given an agent's system prompt and tool list, automatically generate 50 diverse synthetic test scenarios and record the agent's baseline behaviour...”*
-
-**Step A: Generate Scenarios** (Takes ~30s due to rate limits)
 ```bash
-curl -X POST "$env:API_URL/generate-scenarios"
+# Windows PowerShell (set UTF-8 for emoji output)
+$env:PYTHONUTF8 = "1"
+python validate.py
 ```
 
-**Step B: Run Baseline & Record Fingerprint** (Takes ~2-3 mins due to rate limits)
-```bash
-curl -X POST "$env:API_URL/run-baseline"
+**Expected output:**
+
 ```
-*This saves the statistical fingerprint to the `AgentBaselines` DynamoDB table.*
-
-### Success Criteria #2: Tiered Anomaly Scoring
-*“Evaluate new tool-call sequences and output an anomaly score classifying them as normal, warning, or alert.”*
-
-**Step C: Score a Production Session**
-```bash
-curl -X POST -H "Content-Type: application/json" -d '{"user_message": "Hi, check my order #12345."}' "$env:API_URL/score-session"
+============================================================
+ FINAL SUMMARY TABLE
+============================================================
+ Section 1 (Normal):    5/5 passed (100%)
+ Section 2 (Warning):   3/3 passed (100%)
+ Section 3 (Alert):     3/3 passed (100%)
+------------------------------------------------------------
+ Total Passed:          11 / 11 (100.0%)
+ SUCCESS CRITERIA:      MET
+============================================================
 ```
-*This runs the session through the mock agent, calculates the Cosine Distance, Bigram Novelty, and Length Z-Score, outputs the anomaly classification (`NORMAL`, `WARNING`, `ALERT`), and saves the score to the `SessionScores` DynamoDB table.*
 
-### Success Criteria #3: Baseline Drift Detection
-*“Identify when a new deployment’s baseline significantly drifts from the previous baseline.”*
+### 2. Governance middleware / interceptor pattern
 
-We provided a local automated drift simulation script for this criterion that forces a malicious/drifted prompt and evaluates a rolling average. 
-
-Run it locally to verify the alert logic:
 ```bash
-python src/drift_detector.py
+python agent_interceptor.py
 ```
+
+**Expected output (3 sequential tests):**
+
+```
+[Test 1] simple order lookup  → Score: ~2–8    | Class: NORMAL
+[Test 2] multi-tool session   → Score: ~30–55  | Class: WARNING
+[Test 3] 12-call refund loop  → Score: >60     | Class: ALERT  🚨 GOVERNANCE ALERT
+```
+
+This proves Flagent works as **pluggable enterprise middleware** — it wraps any Python agent function, intercepts the tool-call trace, posts it to the scoring API, and returns the classification before the caller receives the result.
+
+---
+
+## PS-4.1 Success Criteria Checklist
+
+| # | Criterion | Status | Evidence |
+|---|-----------|--------|----------|
+| 1 | **Automatic baseline generation** — given an agent's system prompt and tool list, generate 50 diverse synthetic scenarios and record behavioral fingerprint | ✅ | `validate.py` 11/11 · `BUILD_LOG.md §Verification` |
+| 2 | **Tiered anomaly scoring** — evaluate tool-call sequences and output a score classifying sessions as normal / warning / alert | ✅ | `validate.py` Sections 1–3 (100%) · `BUILD_LOG.md §BUG-002` |
+| 3 | **Baseline drift detection** — identify when an agent's behavior has fundamentally shifted from its established baseline | ✅ | `BUILD_LOG.md §Drift Verification` · `real_drift_test.py` (alert at Session 8) |
+
+Full raw test output and calibration reasoning: [`BUILD_LOG.md`](BUILD_LOG.md)
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| LLM | Google Gemini (free tier) — `gemini-2.0-flash` with `gemini-2.0-flash-lite` fallback |
+| Compute | AWS Lambda (Python 3.12, 3 functions) |
+| Storage | AWS DynamoDB (`AgentBaselines`, `SessionScores`) — PAY_PER_REQUEST |
+| API | AWS API Gateway — REST, stage: `dev` |
+| IaC | AWS SAM (single `template.yaml`) |
+| Scoring | 4-component deviation scorer: Cosine Distance · Bigram Novelty · Volume Anomaly · Length Z-score |
+| Dashboard | Vanilla HTML/CSS/JS (`dashboard.html`) — no build step, opens directly in browser |
+
+> **Gemini quota note:** The free tier limit is ~1 500 tokens/min. `gemini_utils.py` handles this with 4-batch generation and exponential back-off retry — no manual intervention needed for normal operation.
