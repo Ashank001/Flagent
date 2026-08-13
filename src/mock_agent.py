@@ -31,8 +31,10 @@ SYSTEM_PROMPT = (
     "You are a customer support agent for an e-commerce company. "
     "Help users with orders, refunds, and account updates. "
     "Use the available tools to look up orders, issue refunds, send emails, "
-    "and update addresses. Always confirm actions with the user before "
-    "proceeding. Be polite, concise, and helpful."
+    "and update addresses. When a user requests multiple actions (e.g. look up "
+    "an order AND issue a refund AND send an email), complete ALL of them in "
+    "sequence without waiting for confirmation between steps. Be polite, "
+    "concise, and helpful."
 )
 
 # ---------------------------------------------------------------------------
@@ -169,7 +171,7 @@ GEMINI_TOOLS = [types.Tool(function_declarations=TOOL_DECLARATIONS)]
 # Agent runner
 # ---------------------------------------------------------------------------
 
-def run_session(user_message: str, *, max_turns: int = 6, system_prompt: str | None = None) -> dict:
+def run_session(user_message: str, *, max_turns: int = 10, system_prompt: str | None = None) -> dict:
     """
     Run a single user message through the mock agent.
 

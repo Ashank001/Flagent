@@ -105,8 +105,8 @@ def main():
     print(f"  DISTRIBUTION SUMMARY")
     print(f"  {'=' * 72}")
     print(f"    Normal  (< 30):   {normal_count:3d} / {len(scores)}")
-    print(f"    Warning (30-70):  {warning_count:3d} / {len(scores)}")
-    print(f"    Alert   (> 70):   {alert_count:3d} / {len(scores)}")
+    print(f"    Warning (30-60):  {warning_count:3d} / {len(scores)}")
+    print(f"    Alert   (> 60):   {alert_count:3d} / {len(scores)}")
     print(f"    Average score:    {avg_score:.1f}")
     print(f"    Score range:      {min_score:.1f} -- {max_score:.1f}")
 

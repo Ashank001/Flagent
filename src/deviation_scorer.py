@@ -4,27 +4,26 @@ deviation_scorer.py — Session Anomaly Scorer
 Scores a production session's tool-call trace against the stored behavioural
 baseline fingerprint. Produces a 0-100 anomaly score and a classification.
 
-Scoring formula (3 weighted components):
-  1. Cosine distance:  tool-frequency vector vs baseline       (weight: 40%)
-  2. Bigram novelty:   % of session bigrams NOT in baseline    (weight: 35%)
-  3. Length z-score:    |session_len - avg| / std, capped at 3  (weight: 25%)
+Scoring formula (4 weighted components):
+  1. Cosine distance:  tool-frequency vector vs baseline       (weight: 30%)
+  2. Bigram novelty:   % of session bigrams NOT in baseline    (weight: 30%)
+  3. Volume anomaly:   unusual repetition of tools             (weight: 25%)
+  4. Length z-score:    |session_len - avg| / std, capped at 3  (weight: 15%)
 
 Classification:
   score < 30   -> "normal"
-  30 <= score <= 70 -> "warning"
-  score > 70   -> "alert"
+  30 <= score <= 60 -> "warning"
+  score > 60   -> "alert"
 """
 
 import math
 from collections import Counter
 
 
-# ---------------------------------------------------------------------------
-# Weights (tunable)
-# ---------------------------------------------------------------------------
-W_COSINE = 0.40
-W_BIGRAM = 0.35
-W_LENGTH = 0.25
+W_COSINE = 0.20
+W_BIGRAM = 0.20
+W_VOLUME = 0.45
+W_LENGTH = 0.15
 
 # z-score cap for length component (z=3 maps to 100)
 Z_CAP = 3.0
@@ -58,6 +57,7 @@ def score_session(session_trace: dict, fingerprint: dict) -> dict:
             "components": {
                 "cosine_distance": float 0-100,
                 "bigram_novelty":  float 0-100,
+                "volume_anomaly":  float 0-100,
                 "length_zscore":   float 0-100,
             },
         }
@@ -73,12 +73,15 @@ def score_session(session_trace: dict, fingerprint: dict) -> dict:
         fingerprint["avg_response_length"],
         fingerprint["std_response_length"],
     )
+    vol = _volume_anomaly_score(
+        session_trace["tool_counts"], fingerprint["tool_frequency"]
+    )
 
-    final = W_COSINE * cos + W_BIGRAM * big + W_LENGTH * lzs
+    final = W_COSINE * cos + W_BIGRAM * big + W_VOLUME * vol + W_LENGTH * lzs
 
     if final < 30:
         classification = "normal"
-    elif final <= 70:
+    elif final <= 60:
         classification = "warning"
     else:
         classification = "alert"
@@ -89,6 +92,7 @@ def score_session(session_trace: dict, fingerprint: dict) -> dict:
         "components": {
             "cosine_distance": round(cos, 2),
             "bigram_novelty": round(big, 2),
+            "volume_anomaly": round(vol, 2),
             "length_zscore": round(lzs, 2),
         },
     }
@@ -182,3 +186,39 @@ def _length_zscore_score(
     z = abs(session_length - avg_length) / std_length
     z_capped = min(z, Z_CAP)
     return (z_capped / Z_CAP) * 100.0
+
+
+# ---------------------------------------------------------------------------
+# Component 4: Volume anomaly (25%)
+# ---------------------------------------------------------------------------
+
+def _volume_anomaly_score(
+    session_tool_counts: dict[str, int],
+    baseline_frequency: dict[str, float],
+) -> float:
+    """
+    Score based on unusual repetition of tools or total high volume.
+    Normalized to 0-100.
+    """
+    score = 0.0
+    
+    # 1. Per-tool volume check
+    for tool, count in session_tool_counts.items():
+        avg = baseline_frequency.get(tool, 0.0)
+        effective_avg = max(1.0, avg)
+        ratio = count / effective_avg
+        
+        # If a single tool is called 2+ times its baseline average
+        if ratio >= 2.0:
+            score += min(100.0, (ratio - 1.5) * 20.0)
+            
+    # 2. Total volume check
+    total_session = sum(session_tool_counts.values())
+    total_avg = sum(baseline_frequency.values())
+    effective_total_avg = max(1.0, total_avg)
+    
+    total_ratio = total_session / effective_total_avg
+    if total_ratio >= 2.0:
+        score += min(100.0, (total_ratio - 1.5) * 20.0)
+        
+    return min(100.0, score)
