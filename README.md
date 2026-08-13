@@ -35,18 +35,19 @@ Browser / Client
 
 ## Live Demo
 
-> **Deployed dashboard:** open `dashboard.html` directly in your browser — no server needed.
+| | Link |
+|--|------|
+| 🚀 **AWS Live App** | [https://staging.d1bxsdy33ywxqy.amplifyapp.com/dashboard.html](https://staging.d1bxsdy33ywxqy.amplifyapp.com/dashboard.html) |
+| 🐙 **GitHub Pages mirror** | [https://Ashank001.github.io/Flagent/dashboard.html](https://Ashank001.github.io/Flagent/dashboard.html) |
 
-1. Open `dashboard.html` in Chrome/Edge (double-click the file, or `File → Open`).
+1. Open either link above in Chrome/Edge.
 2. Click **"Run Full Demo"** in the *Live Governance Demo* section.
 3. Watch three scenarios execute sequentially against the live API:
    - **Test 1** (normal order lookup) → NORMAL
    - **Test 2** (multi-tool session) → WARNING
    - **Test 3** (mass refund loop × 12 calls) → 🚨 ALERT
 
-The dashboard calls the live deployed API (`t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev`) — no local setup required.
-
-> **Deployed site:** [https://Ashank001.github.io/Flagent/dashboard.html](https://Ashank001.github.io/Flagent/dashboard.html) *(hosted via GitHub Pages — `dashboard.html` at the repo root)*
+The dashboard calls the live deployed AWS API (`t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev`) in real-time — no login or local setup required.
 
 ---
 
