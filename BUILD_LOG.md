@@ -326,6 +326,97 @@ Section Summary: 3/3 passed.
 ======================================================================
 ```
 
+## Phase 2: Per-Intent Baselines
+
+### What Changed
+
+1. **Intent classification** — rule-based, driven entirely by the agent's registered `tool_categories` (no hardcoded tool names). Each session's tool calls are mapped to their categories; the dominant category (>50% of calls) becomes the intent. Mixed sessions get "mixed", empty sessions get "general".
+
+2. **Per-intent fingerprints** — baseline recording now builds one fingerprint per intent cluster, plus the global blended fingerprint. When a cluster has fewer than `min_cluster_samples` (configurable, default 5), scoring falls back to the blended fingerprint.
+
+3. **Intent-aware scoring** — the scoring endpoint now:
+   - Classifies the incoming trace's intent
+   - Selects the matching cluster fingerprint (or blended fallback)
+   - Returns `intent_cluster`, `baseline_used`, score, classification, and per-component breakdown
+   - Optionally scores against ALL clusters when `include_all_clusters=true` for comparison/debugging
+
+4. **Configurable weights/thresholds** — `deviation_scorer.score_session()` now accepts an optional `scoring_config` dict read from the agent's registry entry. Legacy calls (no config) use the same hardcoded defaults as v1.
+
+### New Files
+
+| File | Purpose |
+|---|---|
+| `src/intent_classifier.py` | Rule-based intent classification: `classify_intent()`, `classify_traces()` |
+| `verify_phase2.py` | End-to-end verification script for Phase 2 |
+
+### Modified Files
+
+| File | What Changed |
+|---|---|
+| `src/deviation_scorer.py` | `score_session()` accepts optional `scoring_config` for per-agent weights/thresholds. `None` → module defaults (backward compatible). |
+| `src/record_baseline/record_baseline.py` | Builds per-intent-cluster fingerprints via `_build_intent_fingerprints()`. Stores `intent_fingerprints` and `min_cluster_samples` alongside `fingerprint` (blended) in DynamoDB. |
+| `src/score_session/score_session.py` | Authenticated mode: classifies intent, selects cluster/blended fingerprint via `_select_fingerprint()`, uses per-agent `scoring_config`. Added `include_all_clusters` debug flag. Legacy mode unchanged. |
+
+### Verification
+
+#### Legacy compatibility: `validate.py` — 11/11 PASSED (unchanged scores)
+
+#### Per-intent verification: `verify_phase2.py` — 7/7 PASSED
+
+```text
+======================================================================
+  TEST 1: Register agent with retrieval + modification tools
+======================================================================
+  Status: 201
+  ✅ Agent registered
+
+======================================================================
+  TEST 2: Record baseline with mixed traces (6 retrieval + 6 modification)
+======================================================================
+  Status: 200
+  Clusters: {
+    "retrieval":    {"sample_count": 6, "tools": ["check_inventory", "get_faq", "lookup_order", "search_products", "track_shipment"]},
+    "modification": {"sample_count": 6, "tools": ["apply_coupon", "cancel_order", "issue_refund", "send_email", "update_address"]}
+  }
+  Min cluster samples: 5
+  ✅ Per-intent clusters created
+
+======================================================================
+  TEST 3: Score '3 refunds' trace with include_all_clusters=true
+======================================================================
+  Intent cluster:  modification
+  Baseline used:   modification
+  Score:           44.69  (warning)
+  Components:      cosine=38.76, bigram=100.0, volume=30.0, zscore=22.9
+
+  --- All cluster scores for the SAME trace ---
+    blended          score:  49.39  class: warning
+    modification     score:  44.69  class: warning
+    retrieval        score:  65.44  class: alert
+
+  ✅ Classified as 'modification'
+  ✅ Used modification cluster fingerprint
+  ✅ Different scores: modification 44.69 vs retrieval 65.44 (delta: 20.75)
+
+======================================================================
+  TEST 4: Score retrieval trace — should use retrieval cluster
+======================================================================
+  Intent cluster: retrieval | Baseline used: retrieval | Score: 7.37 (normal)
+  ✅ Retrieval trace uses retrieval cluster
+
+======================================================================
+  TEST 5: Legacy /score-session (no auth, no intent)
+======================================================================
+  Score: 2.94, Class: normal (no intent_cluster in response)
+  ✅ Legacy works
+
+======================================================================
+  PHASE 2 VERIFICATION SUMMARY
+======================================================================
+  Passed: 7/7  |  Failed: 0/7  |  Result: ✅ ALL TESTS PASSED
+======================================================================
+```
+
 ## Final AWS Resources
 | Resource Type | Name | Region | Notes |
 |---|---|---|---|

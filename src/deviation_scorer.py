@@ -33,7 +33,11 @@ Z_CAP = 3.0
 # Public API
 # ---------------------------------------------------------------------------
 
-def score_session(session_trace: dict, fingerprint: dict) -> dict:
+def score_session(
+    session_trace: dict,
+    fingerprint: dict,
+    scoring_config: dict | None = None,
+) -> dict:
     """
     Score a single session trace against the baseline fingerprint.
 
@@ -49,6 +53,13 @@ def score_session(session_trace: dict, fingerprint: dict) -> dict:
             "avg_response_length": float,
             "std_response_length": float,
         }
+        scoring_config: optional per-agent config, e.g.:
+            {
+                "weights":    {"cosine": 0.20, "bigram": 0.20,
+                               "volume": 0.45, "zscore": 0.15},
+                "thresholds": {"normal_max": 30, "warning_max": 60},
+            }
+            When None, module-level defaults are used (backward compatible).
 
     Returns:
         {
@@ -62,6 +73,24 @@ def score_session(session_trace: dict, fingerprint: dict) -> dict:
             },
         }
     """
+    # --- Resolve weights ---
+    if scoring_config and "weights" in scoring_config:
+        w = scoring_config["weights"]
+        w_cos = float(w.get("cosine", W_COSINE))
+        w_big = float(w.get("bigram", W_BIGRAM))
+        w_vol = float(w.get("volume", W_VOLUME))
+        w_len = float(w.get("zscore", W_LENGTH))
+    else:
+        w_cos, w_big, w_vol, w_len = W_COSINE, W_BIGRAM, W_VOLUME, W_LENGTH
+
+    # --- Resolve thresholds ---
+    if scoring_config and "thresholds" in scoring_config:
+        t = scoring_config["thresholds"]
+        normal_max = float(t.get("normal_max", 30))
+        warning_max = float(t.get("warning_max", 60))
+    else:
+        normal_max, warning_max = 30, 60
+
     cos = _cosine_distance_score(
         session_trace["tool_counts"], fingerprint["tool_frequency"]
     )
@@ -77,11 +106,11 @@ def score_session(session_trace: dict, fingerprint: dict) -> dict:
         session_trace["tool_counts"], fingerprint["tool_frequency"]
     )
 
-    final = W_COSINE * cos + W_BIGRAM * big + W_VOLUME * vol + W_LENGTH * lzs
+    final = w_cos * cos + w_big * big + w_vol * vol + w_len * lzs
 
-    if final < 30:
+    if final < normal_max:
         classification = "normal"
-    elif final <= 60:
+    elif final <= warning_max:
         classification = "warning"
     else:
         classification = "alert"

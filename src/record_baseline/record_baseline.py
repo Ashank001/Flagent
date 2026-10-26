@@ -9,8 +9,12 @@ Onboarding endpoint.  Accepts EITHER:
   (b) scenarios (list of session traces)  →  aggregates directly into a
       fingerprint.  No LLM needed ("bring your own").
 
-The fingerprint is stored in the AgentBaselines DynamoDB table keyed by
-agent_id.
+v2 — Phase 2:  Builds per-intent-cluster fingerprints in addition to the
+global blended fingerprint.  Intent classification is rule-based, driven
+by the agent's registered tool_categories.
+
+The fingerprint data is stored in the AgentBaselines DynamoDB table keyed
+by agent_id.
 
 Requires x-flagent-key header matching the registered agent's key.
 """
@@ -27,6 +31,7 @@ from decimal import Decimal
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from auth import validate_api_key_from_event
+from intent_classifier import classify_traces
 
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -86,6 +91,55 @@ def _aggregate_fingerprint(session_traces: list[dict]) -> dict:
         "common_bigrams": common_bigrams,
         "avg_response_length": round(avg_length, 2),
         "std_response_length": round(std_length, 2),
+    }
+
+
+def _build_intent_fingerprints(
+    session_traces: list[dict],
+    tool_categories: dict[str, str],
+    min_cluster_samples: int = 5,
+) -> dict:
+    """
+    Build per-intent-cluster fingerprints plus a global blended fingerprint.
+
+    Args:
+        session_traces:      All session traces for the agent.
+        tool_categories:     Agent-registered tool→category map.
+        min_cluster_samples: Minimum traces to form a standalone cluster
+                             fingerprint.  Clusters below this threshold
+                             fall back to the blended fingerprint at scoring
+                             time.
+
+    Returns:
+        {
+            "blended":              <fingerprint_dict>,
+            "intent_fingerprints":  {
+                "retrieval": {"fingerprint": <fp>, "sample_count": N},
+                "modification": {"fingerprint": <fp>, "sample_count": N},
+                ...
+            },
+            "min_cluster_samples":  int,
+        }
+    """
+    # Group traces by classified intent
+    grouped = classify_traces(session_traces, tool_categories)
+
+    # Per-cluster fingerprints
+    intent_fps: dict = {}
+    for intent, traces in grouped.items():
+        fp = _aggregate_fingerprint(traces)
+        intent_fps[intent] = {
+            "fingerprint": fp,
+            "sample_count": len(traces),
+        }
+
+    # Global blended fingerprint (all traces together)
+    blended = _aggregate_fingerprint(session_traces)
+
+    return {
+        "blended": blended,
+        "intent_fingerprints": intent_fps,
+        "min_cluster_samples": min_cluster_samples,
     }
 
 
@@ -245,11 +299,18 @@ def handler(event, context):
 
         body = json.loads(event.get("body", "{}"))
         agent = auth_result["agent"]
+
+        # Extract tool_categories (DynamoDB returns Decimal-wrapped map)
         tool_categories = {}
-        # DynamoDB returns Decimal-wrapped map; convert to plain dict
         raw_cats = agent.get("tool_categories", {})
         if raw_cats:
             tool_categories = {str(k): str(v) for k, v in raw_cats.items()}
+
+        # Extract min_cluster_samples from agent scoring_config
+        scoring_config = agent.get("scoring_config", {})
+        min_cluster_samples = int(
+            scoring_config.get("min_cluster_samples", 5)
+        )
 
         # ---- Determine mode ----
         if "scenarios" in body:
@@ -328,8 +389,12 @@ def handler(event, context):
                 }),
             }
 
-        # ---- Aggregate fingerprint ----
-        fingerprint = _aggregate_fingerprint(session_traces)
+        # ---- Build per-intent + blended fingerprints ----
+        intent_data = _build_intent_fingerprints(
+            session_traces, tool_categories, min_cluster_samples
+        )
+        blended_fingerprint = intent_data["blended"]
+        intent_fingerprints = intent_data["intent_fingerprints"]
 
         # ---- Persist to DynamoDB ----
         import boto3
@@ -344,7 +409,9 @@ def handler(event, context):
             json.dumps(
                 {
                     "agent_id": agent_id,
-                    "fingerprint": fingerprint,
+                    "fingerprint": blended_fingerprint,   # backward compat
+                    "intent_fingerprints": intent_fingerprints,
+                    "min_cluster_samples": min_cluster_samples,
                     "scenario_count": len(session_traces),
                     "source": source,
                     "created_at": datetime.now(timezone.utc).isoformat(),
@@ -354,15 +421,26 @@ def handler(event, context):
         )
         table.put_item(Item=item)
 
+        # ---- Build response with intent summary ----
+        intent_summary = {
+            intent: {
+                "sample_count": data["sample_count"],
+                "tools": list(data["fingerprint"]["tool_frequency"].keys()),
+            }
+            for intent, data in intent_fingerprints.items()
+        }
+
         return {
             "statusCode": 200,
             "headers": CORS_HEADERS,
             "body": json.dumps({
                 "agent_id": agent_id,
-                "fingerprint": fingerprint,
+                "fingerprint": blended_fingerprint,
+                "intent_clusters": intent_summary,
+                "min_cluster_samples": min_cluster_samples,
                 "scenario_count": len(session_traces),
                 "source": source,
-                "message": "Baseline recorded successfully",
+                "message": "Baseline recorded with per-intent clusters",
             }),
         }
 
