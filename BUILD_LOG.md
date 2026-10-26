@@ -417,6 +417,91 @@ Section Summary: 3/3 passed.
 ======================================================================
 ```
 
+## Phase 3: Python SDK (`flagent-sdk/`)
+
+### What Was Built
+
+A pip-installable Python package (`flagent`) that any developer can adopt in ~10 lines of code. Depends only on `requests` — no AWS SDK, no LLM library, no backend imports.
+
+### SDK API
+
+```python
+from flagent import Flagent
+
+fg = Flagent(api_url="...", api_key="fgnt_...", agent_id="my-bot")
+
+# Option A: Decorator + wrapped tools (auto-capture)
+tools = fg.wrap_tools({"lookup_order": lookup_fn, "issue_refund": refund_fn})
+
+@fg.governed(on_alert=lambda r: print(f"ALERT: {r.score}"))
+def handle(msg):
+    tools["lookup_order"]("ORD-123")
+    return "Done"
+
+# Option B: Manual context manager
+with fg.session(mode="enforce") as s:
+    s.record_tool_call("lookup_order", args={"id": "123"})
+    s.set_response_length(42)
+
+# Onboarding helpers
+fg.register_agent(name="My Agent", tool_categories={...})
+fg.record_baseline(scenarios=[...])
+```
+
+### Modes
+
+| Mode | Behavior |
+|---|---|
+| `shadow` (default) | Traces sent on background thread. Never blocks, never raises. Errors swallowed. |
+| `enforce` | Scores synchronously. `on_alert`/`on_warning` callbacks fire. `raise_on_alert=True` raises `FlagentBlocked`. |
+
+### Fail-Open
+
+- Default: if API is unreachable, agent keeps working (`ScoreResult.fail_open()` returned)
+- `fail_closed=True`: raises `FlagentBlocked` when API is down (for high-security use cases)
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `flagent-sdk/pyproject.toml` | Package config, depends only on `requests` |
+| `flagent-sdk/flagent/__init__.py` | Public API: `Flagent`, `FlagentBlocked`, `ScoreResult`, `ToolCall` |
+| `flagent-sdk/flagent/client.py` | Main client: `governed()`, `session()`, `wrap_tools()`, `register_agent()`, `record_baseline()` |
+| `flagent-sdk/flagent/session.py` | Session lifecycle, trace building, shadow/enforce sending |
+| `flagent-sdk/flagent/models.py` | `ToolCall`, `ScoreResult` dataclasses |
+| `flagent-sdk/flagent/exceptions.py` | `FlagentError`, `FlagentBlocked` |
+| `flagent-sdk/tests/test_trace_capture.py` | Manual sessions, decorator, wrap_tools, tool counting |
+| `flagent-sdk/tests/test_shadow_mode.py` | Background sending, error swallowing, non-blocking |
+| `flagent-sdk/tests/test_enforce_mode.py` | Callbacks, raise_on_alert, classification handling |
+| `flagent-sdk/tests/test_fail_open.py` | Fail-open default, fail-closed, timeout handling |
+| `flagent-sdk/examples/minimal.py` | 10-line working demo |
+
+### Verification: `pytest` — 19/19 PASSED
+
+```text
+tests/test_enforce_mode.py::TestEnforceMode::test_normal_score_no_callback PASSED
+tests/test_enforce_mode.py::TestEnforceMode::test_alert_fires_callback PASSED
+tests/test_enforce_mode.py::TestEnforceMode::test_warning_fires_callback PASSED
+tests/test_enforce_mode.py::TestEnforceMode::test_raise_on_alert PASSED
+tests/test_enforce_mode.py::TestEnforceMode::test_raise_on_alert_does_not_raise_for_normal PASSED
+tests/test_fail_open.py::TestFailOpen::test_enforce_fail_open_default PASSED
+tests/test_fail_open.py::TestFailOpen::test_enforce_fail_closed PASSED
+tests/test_fail_open.py::TestFailOpen::test_enforce_timeout_fail_open PASSED
+tests/test_shadow_mode.py::TestShadowMode::test_shadow_sends_trace PASSED
+tests/test_shadow_mode.py::TestShadowMode::test_shadow_swallows_errors PASSED
+tests/test_shadow_mode.py::TestShadowMode::test_shadow_does_not_block PASSED
+tests/test_trace_capture.py::TestManualSession::test_records_tool_calls PASSED
+tests/test_trace_capture.py::TestManualSession::test_result_available_after_session PASSED
+tests/test_trace_capture.py::TestManualSession::test_duplicate_tool_counts PASSED
+tests/test_trace_capture.py::TestManualSession::test_response_length_set PASSED
+tests/test_trace_capture.py::TestDecoratorCapture::test_decorator_captures_wrapped_tools PASSED
+tests/test_trace_capture.py::TestDecoratorCapture::test_last_result_attached_to_wrapper PASSED
+tests/test_trace_capture.py::TestWrapTools::test_wrapped_function_returns_original_result PASSED
+tests/test_trace_capture.py::TestWrapTools::test_wrapped_tools_record_inside_session PASSED
+
+============================= 19 passed in 1.16s ==============================
+```
+
 ## Final AWS Resources
 | Resource Type | Name | Region | Notes |
 |---|---|---|---|
