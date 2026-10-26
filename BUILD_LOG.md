@@ -502,6 +502,44 @@ tests/test_trace_capture.py::TestWrapTools::test_wrapped_tools_record_inside_ses
 ============================= 19 passed in 1.16s ==============================
 ```
 
+## Phase 4: Dashboard v2 — Multi-Agent, Real-Time
+
+### What Was Built
+
+`dashboard_v2.html` — a premium dark-theme governance dashboard with:
+
+1. **Agent config bar** — enter any agent ID + API key to switch between agents
+2. **Real-time score chart** (Chart.js) — sessions appear as color-coded dots (green/yellow/red) with warning (30) and alert (60) threshold lines
+3. **Per-intent breakdown** — each session shows intent cluster and which baseline was used for scoring
+4. **Recent sessions table** — score, classification, intent, baseline, tools called, timestamp
+5. **Stats grid** — total sessions, normal, warnings, alerts (live counters)
+6. **Quick trace presets** — Normal, Warning, Alert, Retrieval, Modification (one-click test)
+7. **Include all clusters** toggle — scores same trace against every cluster for comparison
+8. **3-step onboarding wizard** — register agent → define tool categories → record baseline, all from the browser
+9. **Toast notifications** — success/error feedback
+
+### Design
+
+- Dark glassmorphism with purple/blue/cyan gradient accents
+- Inter + JetBrains Mono fonts from Google Fonts
+- Chart.js 4.x from CDN (no npm)
+- Responsive grid layout
+- Micro-animations on cards, buttons, page transitions
+- Original `dashboard.html` untouched and still working
+
+### Verification
+
+| Check | Result |
+|---|---|
+| `dashboard_v2.html` loads and renders | ✅ |
+| Onboarding wizard: register → tools → baseline | ✅ (manual walkthrough) |
+| Submit test traces (normal/warning/alert) | ✅ |
+| Chart shows color-coded scores with threshold lines | ✅ |
+| Per-intent cluster + baseline_used displayed | ✅ |
+| Include all clusters shows cross-cluster comparison | ✅ |
+| Original `dashboard.html` untouched | ✅ |
+| `validate.py` legacy — 11/11 | ✅ |
+
 ## Final AWS Resources
 | Resource Type | Name | Region | Notes |
 |---|---|---|---|
