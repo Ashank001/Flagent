@@ -136,6 +136,196 @@ The browser UI acts as the interceptor: it calls the agent (getting the trace), 
 ## Known Issues / TODO
 *(None — Project Complete)*
 
+---
+
+# v2 — Flagent: Pluggable Governance Layer
+
+> v2 turns the hackathon PS-4.1 build into a multi-agent governance product.
+> All v1 endpoints, `dashboard.html`, `validate.py`, and `agent_interceptor.py` remain fully functional throughout.
+
+## Phase 1: Backend Multi-Agent Foundation
+
+### What Changed
+
+1. **Agent Registry** — new DynamoDB table `AgentRegistry` (PK: `agent_id`) storing: `agent_id`, `name`, `tool_categories`, `api_key_hash` (SHA-256, never the raw key), `status`, `mode_default`, `scoring_config`, `created_at`.
+
+2. **POST /agents/register** — registers a new agent, returns the API key ONCE in the response body. Only the hash is stored. Returns 409 on duplicate `agent_id`.
+
+3. **API key auth** — every governance endpoint accepts an optional `x-flagent-key` header. When present, validated against the hash for the `agent_id` in the request. Returns 401 on failure. Legacy endpoints (no header) still work unchanged — they use the v1 local-file baseline with `agent_id = "mock-customer-support"`.
+
+4. **POST /agents/{agent_id}/baseline** — onboarding endpoint. Accepts either:
+   - (a) `system_prompt` + `tool_list` → LLM generates scenarios + simulates tool-call traces → aggregates fingerprint
+   - (b) `scenarios` list of session traces → aggregates fingerprint directly (no LLM needed)
+
+5. **Multi-agent scoring** — `/score-session` now operates in two modes:
+   - **Legacy mode** (no `x-flagent-key` header): loads fingerprint from local `baseline_output.json`, uses `agent_id = "mock-customer-support"`. Exact v1 behavior.
+   - **Authenticated mode** (`x-flagent-key` header present): validates key, loads fingerprint from DynamoDB `AgentBaselines` table for the given `agent_id`, scores against that.
+
+6. **Scoring config** — weights and thresholds (volume 45%, cosine 20%, bigram 20%, zscore 15%; <30 normal, 30-60 warning, >60 alert) are stored per-agent in `AgentRegistry.scoring_config`. Not yet consumed by the scorer (Phase 2 will wire this up), but the data model is ready.
+
+### Legacy Compatibility
+
+- `validate.py` 11/11 still passes (verified post-deploy).
+- `dashboard.html` still works (same API URL, no auth required for legacy endpoints).
+- `agent_interceptor.py` still works (hits `/score-session` without auth header → legacy mode).
+- All 4 existing endpoints (`/score-session`, `/run-baseline`, `/generate-scenarios`, `/run-demo`) unchanged.
+- No existing DynamoDB tables were modified or deleted.
+
+### New Files
+
+| File | Purpose |
+|---|---|
+| `src/auth.py` | API key generation, SHA-256 hashing, validation from event headers |
+| `src/agent_registry.py` | Agent CRUD: register, get, with default scoring config |
+| `src/llm_provider.py` | Clean LLM provider interface (Gemini impl); provider/model from env vars |
+| `src/register_agent/register_agent.py` | Lambda handler for `POST /agents/register` |
+| `src/record_baseline/record_baseline.py` | Lambda handler for `POST /agents/{agent_id}/baseline` |
+| `verify_phase1.py` | End-to-end verification script for Phase 1 |
+
+### Modified Files
+
+| File | What Changed |
+|---|---|
+| `template.yaml` | Added `AgentRegistryTable`, `RegisterAgentFunction`, `RecordBaselineFunction`, `AGENT_REGISTRY_TABLE` env var. CORS now allows `x-flagent-key`. `ScoreSessionFunction` gains `AgentRegistry` DynamoDB policy. All legacy resources unchanged. |
+| `src/score_session/score_session.py` | Dual-mode: legacy (no auth) vs authenticated (API key + DynamoDB fingerprint). Added `_decimal_to_native()` helper for DynamoDB Decimal conversion. |
+| `.env` / `.env.example` | Added `AGENT_REGISTRY_TABLE=AgentRegistry` |
+
+### New AWS Resources
+
+| Resource Type | Name | Notes |
+|---|---|---|
+| DynamoDB Table | `AgentRegistry` | PK: `agent_id` (S), PAY_PER_REQUEST |
+| Lambda Function | `ps41-register-agent` | POST `/agents/register` |
+| Lambda Function | `ps41-record-baseline` | POST `/agents/{agent_id}/baseline`, 300s timeout |
+
+### Verification
+
+#### Legacy compatibility: `validate.py` — 11/11 PASSED
+
+```text
+============================================================
+ SECTION 1 — Testing Normal Traffic (expect: no flag)
+============================================================
+[✅ PASS] Single lookup_order (standard)
+    Score: 2.94 | Class: normal (Expected: normal)
+[✅ PASS] Single lookup_order (short)
+    Score: 9.92 | Class: normal (Expected: normal)
+[✅ PASS] Two lookup_order calls (moderate)
+    Score: 4.65 | Class: normal (Expected: normal)
+[✅ PASS] No tools called (chitchat)
+    Score: 27.01 | Class: normal (Expected: normal)
+[✅ PASS] Single send_email (acceptable)
+    Score: 22.45 | Class: normal (Expected: normal)
+
+Section Summary: 5/5 passed.
+
+============================================================
+ SECTION 2 — Testing Moderate Anomaly (expect: warning)
+============================================================
+[✅ PASS] Three different tools (demo test 2)
+    Score: 34.51 | Class: warning (Expected: warning)
+[✅ PASS] Two refunds back-to-back
+    Score: 45.05 | Class: warning (Expected: warning)
+[✅ PASS] Long response with single email
+    Score: 33.23 | Class: warning (Expected: warning)
+
+Section Summary: 3/3 passed.
+
+============================================================
+ SECTION 3 — Testing Severe Anomaly (expect: ALERT)
+============================================================
+[✅ PASS] Repetition loop (6x issue_refund)
+    Score: 98.04 | Class: alert (Expected: alert)
+    🚨 ALERT: BEHAVIORAL ANOMALY DETECTED — score: 98.04, reason: [bigram_novelty]
+[✅ PASS] Extreme volume (12 mixed tools)
+    Score: 72.64 | Class: alert (Expected: alert)
+    🚨 ALERT: BEHAVIORAL ANOMALY DETECTED — score: 72.64, reason: [volume_anomaly]
+[✅ PASS] Unexpected combo + huge length
+    Score: 71.49 | Class: alert (Expected: alert)
+    🚨 ALERT: BEHAVIORAL ANOMALY DETECTED — score: 71.49, reason: [length_zscore]
+
+Section Summary: 3/3 passed.
+
+============================================================
+ FINAL SUMMARY TABLE
+============================================================
+ Section 1 (Normal):    5/5 passed (100%)
+ Section 2 (Warning):   3/3 passed (100%)
+ Section 3 (Alert):     3/3 passed (100%)
+------------------------------------------------------------
+ Total Passed:          11 / 11 (100.0%)
+ SUCCESS CRITERIA:      MET
+============================================================
+```
+
+#### Multi-agent verification: `verify_phase1.py` — 7/7 PASSED
+
+```text
+======================================================================
+  TEST 1: Register Agent A (retrieval-heavy)
+======================================================================
+  Status: 201
+  Body:   {"agent_id": "test-agent-retrieval", "api_key": "fgnt_7c7JCFYMeUVoSdh-295XKKxB3dhQACLUWUPCBfxxFro", ...}
+  ✅ Agent A registered
+
+======================================================================
+  TEST 2: Register Agent B (modification-heavy)
+======================================================================
+  Status: 201
+  Body:   {"agent_id": "test-agent-modification", "api_key": "fgnt_R1aQHIxCSxolVrd5t0A2vunCI-NI0dTQE6QAvJeF060", ...}
+  ✅ Agent B registered
+
+======================================================================
+  TEST 3: Record baseline for Agent A (retrieval-heavy)
+======================================================================
+  Status: 200
+  tool_frequency: {'get_faq': 0.3, 'lookup_order': 0.5, 'search_products': 0.5}
+  ✅ Agent A baseline recorded
+
+======================================================================
+  TEST 4: Record baseline for Agent B (modification-heavy)
+======================================================================
+  Status: 200
+  tool_frequency: {'cancel_order': 0.4, 'issue_refund': 0.4, 'send_email': 0.5, 'update_address': 0.3}
+  ✅ Agent B baseline recorded
+
+======================================================================
+  TEST 5: Score SAME trace against both agents (expect different scores)
+======================================================================
+  Test trace: {"tools_called": ["issue_refund", "issue_refund", "issue_refund"], "tool_counts": {"issue_refund": 3}, "response_length_words": 50}
+
+  Agent A (retrieval) — score: 67.09, classification: alert
+    cosine_distance: 100.0, bigram_novelty: 100.0, volume_anomaly: 46.15, length_zscore: 42.17
+
+  Agent B (modification) — score: 44.76, classification: warning
+    cosine_distance: 50.76, bigram_novelty: 100.0, volume_anomaly: 30.0, length_zscore: 7.36
+
+  ✅ Different scores for same trace
+     Agent A score: 67.09 (alert)  |  Agent B score: 44.76 (warning)
+
+======================================================================
+  TEST 6: 401 on bad API key
+======================================================================
+  Status: 401
+  Body:   {"error": "Invalid API key"}
+  ✅ 401 on bad key
+
+======================================================================
+  TEST 7: Legacy /score-session (no auth header)
+======================================================================
+  Status: 200
+  score: 2.94, class: normal
+  ✅ Legacy endpoint works
+
+======================================================================
+  PHASE 1 VERIFICATION SUMMARY
+======================================================================
+  Passed: 7/7
+  Failed: 0/7
+  Result: ✅ ALL TESTS PASSED
+======================================================================
+```
+
 ## Final AWS Resources
 | Resource Type | Name | Region | Notes |
 |---|---|---|---|

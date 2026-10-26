@@ -1,9 +1,10 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  PS-4.1 Agent Behavioral Baseline Builder
-  Automatically establishes behavioural baselines for AI agents using synthetic
-  traffic, then monitors production sessions against them.
+  Flagent — Agent Behavioral Governance Layer
+  Establishes behavioural baselines for AI agents using synthetic traffic,
+  then monitors production sessions against them.  Supports multi-agent
+  registration with per-agent baselines and API key authentication.
   LLM provider: Google Gemini (free tier, google-genai SDK).
 
 Parameters:
@@ -21,7 +22,10 @@ Globals:
       Variables:
         BASELINES_TABLE: "AgentBaselines"
         SESSIONS_TABLE: "SessionScores"
+        AGENT_REGISTRY_TABLE: "AgentRegistry"
         GEMINI_API_KEY: !Ref GeminiApiKey
+        LLM_PROVIDER: "gemini"
+        LLM_MODEL: "gemini-2.0-flash"
 
 Resources:
   # ---------------------------------------------------------------
@@ -32,14 +36,31 @@ Resources:
     Properties:
       Name: ps41-baseline-api
       StageName: dev
-      Description: API for Agent Behavioral Baseline Builder
+      Description: API for Agent Behavioral Governance Layer
       Cors:
         AllowMethods: "'OPTIONS,POST'"
-        AllowHeaders: "'Content-Type'"
+        AllowHeaders: "'Content-Type,x-flagent-key'"
         AllowOrigin: "'*'"
 
   # ---------------------------------------------------------------
-  # Lambda Functions
+  # DynamoDB Tables
+  # ---------------------------------------------------------------
+
+  # v2: Agent Registry — stores registered agents and hashed API keys
+  AgentRegistryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: "AgentRegistry"
+      AttributeDefinitions:
+        - AttributeName: agent_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: agent_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  # ---------------------------------------------------------------
+  # Lambda Functions — LEGACY (v1, unchanged)
   # ---------------------------------------------------------------
   GenerateScenariosFunction:
     Type: AWS::Serverless::Function
@@ -89,13 +110,16 @@ Resources:
       Handler: score_session.score_session.handler
       CodeUri: src/
       Description: >
-        Scores a production session against the stored baseline. Flags normal,
-        warning, or alert depending on deviation thresholds.
+        Scores a production session against the stored baseline.
+        v2: multi-agent scoring via x-flagent-key auth + DynamoDB lookup.
+        Legacy mode (no header) preserved for backward compatibility.
       Policies:
         - DynamoDBCrudPolicy:
             TableName: "AgentBaselines"
         - DynamoDBCrudPolicy:
             TableName: "SessionScores"
+        - DynamoDBCrudPolicy:
+            TableName: "AgentRegistry"
       Events:
         ApiEvent:
           Type: Api
@@ -121,6 +145,55 @@ Resources:
             Path: /run-demo
             Method: POST
 
+  # ---------------------------------------------------------------
+  # Lambda Functions — v2 (multi-agent)
+  # ---------------------------------------------------------------
+
+  RegisterAgentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ps41-register-agent
+      Handler: register_agent.register_agent.handler
+      CodeUri: src/
+      Description: >
+        Register a new agent in the governance system. Returns a one-time
+        API key that must be stored securely by the caller.
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: "AgentRegistry"
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref BaselineApi
+            Path: /agents/register
+            Method: POST
+
+  RecordBaselineFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ps41-record-baseline
+      Handler: record_baseline.record_baseline.handler
+      CodeUri: src/
+      Timeout: 300
+      Description: >
+        Onboarding endpoint for new agents. Accepts either
+        (a) system_prompt + tool_list for LLM-generated baselines or
+        (b) user-supplied session traces for direct baseline recording.
+        Requires x-flagent-key authentication.
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: "AgentBaselines"
+        - DynamoDBCrudPolicy:
+            TableName: "AgentRegistry"
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref BaselineApi
+            Path: /agents/{agent_id}/baseline
+            Method: POST
+
 Outputs:
   ApiEndpoint:
     Description: API Gateway endpoint URL
@@ -137,3 +210,9 @@ Outputs:
   RunDemoArn:
     Description: ARN of the RunDemo Lambda
     Value: !GetAtt RunDemoFunction.Arn
+  RegisterAgentArn:
+    Description: ARN of the RegisterAgent Lambda
+    Value: !GetAtt RegisterAgentFunction.Arn
+  RecordBaselineArn:
+    Description: ARN of the RecordBaseline Lambda
+    Value: !GetAtt RecordBaselineFunction.Arn
