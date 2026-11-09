@@ -27,3 +27,8 @@ samconfig.toml
 # ── OS ─────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# Working copies of data files (canonical copies in data/ and root)
+/baseline_output.json
+/src/baseline_output.json
+/src/scenarios_output.json
