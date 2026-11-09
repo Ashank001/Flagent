@@ -3,7 +3,8 @@ baseline_recorder.py — Behavioral Baseline Recorder
 
 Takes the 50 synthetic scenarios, runs each through the mock agent (via
 mock_agent.run_session), and records per-session behavioural metrics.
-Aggregates into a single fingerprint and saves to DynamoDB + local JSON.
+Aggregates into a single fingerprint and saves via the storage interface
+plus a local JSON file.
 
 Fingerprint schema:
   - tool_frequency:      {tool_name: avg calls per session}
@@ -23,7 +24,6 @@ import sys
 import time
 from collections import Counter
 from datetime import datetime, timezone
-from decimal import Decimal
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -31,64 +31,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-import boto3
-from botocore.exceptions import ClientError
 from mock_agent import run_session
-
-
-# ---------------------------------------------------------------------------
-# DynamoDB helpers
-# ---------------------------------------------------------------------------
-
-def _ensure_table_exists(table_name: str, region: str) -> None:
-    """Create AgentBaselines table if it doesn't exist."""
-    dynamodb = boto3.client("dynamodb", region_name=region)
-    try:
-        dynamodb.describe_table(TableName=table_name)
-        print(f"  [dynamo] Table '{table_name}' already exists.")
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "ResourceNotFoundException":
-            print(f"  [dynamo] Creating table '{table_name}' ...")
-            dynamodb.create_table(
-                TableName=table_name,
-                KeySchema=[{"AttributeName": "agent_id", "KeyType": "HASH"}],
-                AttributeDefinitions=[
-                    {"AttributeName": "agent_id", "AttributeType": "S"}
-                ],
-                BillingMode="PAY_PER_REQUEST",
-            )
-            dynamodb.get_waiter("table_exists").wait(TableName=table_name)
-            print(f"  [dynamo] Table '{table_name}' created.")
-        else:
-            raise
-
-
-def _save_fingerprint_to_dynamo(
-    agent_id: str, fingerprint: dict, scenario_count: int
-) -> None:
-    """Write the fingerprint to the AgentBaselines DynamoDB table."""
-    region = os.environ.get("AWS_REGION", "ap-south-1")
-    table_name = os.environ.get("BASELINES_TABLE", "AgentBaselines")
-
-    _ensure_table_exists(table_name, region)
-
-    dynamodb = boto3.resource("dynamodb", region_name=region)
-    table = dynamodb.Table(table_name)
-
-    # DynamoDB can't store Python floats — round-trip through JSON → Decimal
-    item = json.loads(
-        json.dumps(
-            {
-                "agent_id": agent_id,
-                "fingerprint": fingerprint,
-                "scenario_count": scenario_count,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-        ),
-        parse_float=Decimal,
-    )
-    table.put_item(Item=item)
-    print(f"  [dynamo] Saved fingerprint for '{agent_id}' to '{table_name}'.")
+from storage.factory import get_storage
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +105,7 @@ def run_baseline(
     2. Run each through mock_agent.run_session() (rate-limited)
     3. Record per-session metrics
     4. Aggregate into fingerprint
-    5. Save to DynamoDB + local JSON
+    5. Save via storage interface + local JSON
 
     Returns the full baseline output dict.
     """
@@ -252,11 +196,17 @@ def run_baseline(
         json.dump(output, f, indent=2, ensure_ascii=False)
     print(f"\n  Saved baseline to {output_path}")
 
-    # Save fingerprint to DynamoDB
+    # Save fingerprint via storage interface
     try:
-        _save_fingerprint_to_dynamo(agent_id, fingerprint, len(scenarios))
+        storage = get_storage()
+        storage.put_baseline(agent_id, "blended", {
+            "fingerprint": fingerprint,
+            "scenario_count": len(scenarios),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        print(f"  [storage] Saved fingerprint for '{agent_id}'.")
     except Exception as exc:
-        print(f"  WARNING: DynamoDB save failed: {exc}")
+        print(f"  WARNING: Storage save failed: {exc}")
         print(f"  Fingerprint is still saved locally in {output_path}")
 
     # Clean up progress file

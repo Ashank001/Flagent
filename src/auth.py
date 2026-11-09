@@ -9,9 +9,8 @@ Uses secrets.compare_digest for timing-safe comparison to prevent timing attacks
 
 import hashlib
 import secrets
-import os
 
-import boto3
+from storage.factory import get_storage
 
 
 def generate_api_key(prefix: str = "fgnt") -> str:
@@ -32,8 +31,6 @@ def validate_api_key_from_event(event: dict, agent_id: str) -> dict:
     """
     Validate the x-flagent-key header against the stored hash for agent_id.
 
-    Reads the AgentRegistry table from env vars (AGENT_REGISTRY_TABLE, AWS_REGION).
-
     Returns:
         {"valid": True, "agent": <agent_record_dict>}  on success
         {"valid": False, "error": "..."}                on failure
@@ -47,18 +44,13 @@ def validate_api_key_from_event(event: dict, agent_id: str) -> dict:
     if not api_key:
         return {"valid": False, "error": "Missing x-flagent-key header"}
 
-    region = os.environ.get("AWS_REGION", "ap-south-1")
-    registry_table = os.environ.get("AGENT_REGISTRY_TABLE", "AgentRegistry")
-
-    dynamodb = boto3.resource("dynamodb", region_name=region)
-    table = dynamodb.Table(registry_table)
+    storage = get_storage()
 
     try:
-        response = table.get_item(Key={"agent_id": agent_id})
+        agent = storage.get_agent(agent_id)
     except Exception as e:
         return {"valid": False, "error": f"Registry lookup failed: {str(e)}"}
 
-    agent = response.get("Item")
     if not agent:
         return {"valid": False, "error": f"Agent '{agent_id}' not found in registry"}
 

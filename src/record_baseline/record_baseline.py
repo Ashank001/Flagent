@@ -13,8 +13,7 @@ v2 — Phase 2:  Builds per-intent-cluster fingerprints in addition to the
 global blended fingerprint.  Intent classification is rule-based, driven
 by the agent's registered tool_categories.
 
-The fingerprint data is stored in the AgentBaselines DynamoDB table keyed
-by agent_id.
+The fingerprint data is stored via the storage interface.
 
 Requires x-flagent-key header matching the registered agent's key.
 """
@@ -26,12 +25,12 @@ import sys
 import os
 from collections import Counter
 from datetime import datetime, timezone
-from decimal import Decimal
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from auth import validate_api_key_from_event
 from intent_classifier import classify_traces
+from storage.factory import get_storage
 
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -300,7 +299,7 @@ def handler(event, context):
         body = json.loads(event.get("body", "{}"))
         agent = auth_result["agent"]
 
-        # Extract tool_categories (DynamoDB returns Decimal-wrapped map)
+        # Extract tool_categories from agent record
         tool_categories = {}
         raw_cats = agent.get("tool_categories", {})
         if raw_cats:
@@ -396,30 +395,26 @@ def handler(event, context):
         blended_fingerprint = intent_data["blended"]
         intent_fingerprints = intent_data["intent_fingerprints"]
 
-        # ---- Persist to DynamoDB ----
-        import boto3
+        # ---- Persist via storage interface ----
+        storage = get_storage()
+        now = datetime.now(timezone.utc).isoformat()
 
-        region = os.environ.get("AWS_REGION", "ap-south-1")
-        table_name = os.environ.get("BASELINES_TABLE", "AgentBaselines")
+        # Store blended baseline
+        storage.put_baseline(agent_id, "blended", {
+            "fingerprint": blended_fingerprint,
+            "min_cluster_samples": min_cluster_samples,
+            "scenario_count": len(session_traces),
+            "source": source,
+            "created_at": now,
+        })
 
-        dynamodb = boto3.resource("dynamodb", region_name=region)
-        table = dynamodb.Table(table_name)
-
-        item = json.loads(
-            json.dumps(
-                {
-                    "agent_id": agent_id,
-                    "fingerprint": blended_fingerprint,   # backward compat
-                    "intent_fingerprints": intent_fingerprints,
-                    "min_cluster_samples": min_cluster_samples,
-                    "scenario_count": len(session_traces),
-                    "source": source,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                }
-            ),
-            parse_float=Decimal,
-        )
-        table.put_item(Item=item)
+        # Store per-intent baselines
+        for intent_name, intent_data_item in intent_fingerprints.items():
+            storage.put_baseline(agent_id, intent_name, {
+                "fingerprint": intent_data_item["fingerprint"],
+                "sample_count": intent_data_item["sample_count"],
+                "created_at": now,
+            })
 
         # ---- Build response with intent summary ----
         intent_summary = {
