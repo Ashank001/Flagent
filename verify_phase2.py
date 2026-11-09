@@ -15,9 +15,13 @@ Usage:
 
 import requests
 import json
+import os
 import sys
 
-API_URL = "https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev"
+# Override with API_BASE_URL env var to point at a local server:
+#   $env:API_BASE_URL = "http://localhost:8000"
+#   python verify_phase2.py
+API_URL = os.environ.get("API_BASE_URL", "https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev").rstrip("/")
 
 AGENT_ID = "test-mixed-agent-v2"
 

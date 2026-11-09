@@ -878,3 +878,153 @@ No `boto3`, `dynamodb`, `Table(`, or `firestore` calls outside `src/storage/`.
 [host-migration e502792] feat(host-migration): Phase 1 — storage interface + Firestore/memory backends
  17 files changed, 1232 insertions(+), 322 deletions(-)
 ```
+
+
+## Phase 2: FastAPI Adapter + Docker Container
+
+### What Was Built
+
+1. **`app/main.py`** — FastAPI adapter layer (pure adapter, no scoring logic):
+   - Each route builds an API-Gateway-proxy-style event dict and calls the existing Lambda handler
+   - Routes: `POST /generate-scenarios`, `/run-baseline`, `/score-session`, `/run-demo`, `/agents/register`, `/agents/{agent_id}/baseline`, `GET /health`
+   - CORS middleware from `ALLOWED_ORIGINS` env (comma-separated, default `*`)
+   - Lazy handler imports to avoid import-time side-effects
+
+2. **`Dockerfile`** — `python:3.13-slim`, non-root user, installs `requirements-app.txt` + `src/requirements.txt`, copies `src/`, `data/`, `app/`. `PORT` from env (default 8000).
+
+3. **`docker-compose.yml`** — local run with `STORAGE=memory`, port 8000.
+
+4. **`.dockerignore`** — excludes secrets, git, tests, SDK, SAM artifacts.
+
+5. **`requirements-app.txt`** — `fastapi`, `uvicorn`, `pyyaml`, `google-cloud-firestore`, `httpx`, `google-genai`, `python-dotenv`. `boto3` intentionally omitted (only needed for `STORAGE=dynamodb`).
+
+6. **`app/test_routes.py`** — parses `template.yaml`, asserts every declared API route exists in the FastAPI app. Tests health endpoint, baseline file existence. 10/10 passed.
+
+7. **`validate.py`, `verify_phase1.py`, `verify_phase2.py`** — added `API_BASE_URL` env var support. Default remains the original AWS URL. Override with `$env:API_BASE_URL="http://localhost:8000"` for local testing.
+
+### New Files
+
+| File | Purpose |
+|---|---|
+| `app/__init__.py` | FastAPI adapter package |
+| `app/main.py` | FastAPI adapter — wraps Lambda handlers with HTTP adapter |
+| `app/test_routes.py` | Route coverage test: template.yaml ↔ FastAPI routes |
+| `requirements-app.txt` | App-layer Python dependencies (FastAPI, uvicorn, etc.) |
+| `Dockerfile` | Docker image for Render deployment |
+| `docker-compose.yml` | Local development with `STORAGE=memory` |
+| `.dockerignore` | Keep secrets and test files out of Docker image |
+
+### Modified Files
+
+| File | What Changed |
+|---|---|
+| `validate.py` | Added `API_BASE_URL` env var support (line 5–7) |
+| `verify_phase1.py` | Added `API_BASE_URL` env var support (line 18–21) |
+| `verify_phase2.py` | Added `API_BASE_URL` env var support (line 18–21) |
+
+### SAM Packaging Gap (Documented)
+
+> [!WARNING]
+> `template.yaml` uses `CodeUri: src/` for all Lambda functions. `data/baseline_output.json` is at the repo root, NOT inside `src/`. SAM will NOT package `data/baseline_output.json` into Lambda zips on redeploy. Legacy scoring and production monitor will fail on SAM redeploy without a fix (move `data/` inside `src/`, or change `CodeUri` to `.`). **This is untested since the AWS stack is deleted.** The Docker image is unaffected — the Dockerfile copies `data/` explicitly.
+
+### Verification
+
+#### Route coverage: `pytest app/test_routes.py -v` — 10/10 PASSED
+
+```text
+app/test_routes.py::TestRoutes::test_template_routes_loaded PASSED       [ 10%]
+app/test_routes.py::TestRoutes::test_route_exists[POST-/generate-scenarios] PASSED [ 20%]
+app/test_routes.py::TestRoutes::test_route_exists[POST-/run-baseline] PASSED [ 30%]
+app/test_routes.py::TestRoutes::test_route_exists[POST-/score-session] PASSED [ 40%]
+app/test_routes.py::TestRoutes::test_route_exists[POST-/run-demo] PASSED [ 50%]
+app/test_routes.py::TestRoutes::test_route_exists[POST-/agents/register] PASSED [ 60%]
+app/test_routes.py::TestRoutes::test_route_exists[POST-/agents/{agent_id}/baseline] PASSED [ 70%]
+app/test_routes.py::TestRoutes::test_health_route_exists PASSED          [ 80%]
+app/test_routes.py::TestRoutes::test_health_returns_ok PASSED            [ 90%]
+app/test_routes.py::TestRoutes::test_baseline_file_exists PASSED         [100%]
+
+============================= 10 passed in 0.61s ==============================
+```
+
+#### Health check: `GET /health` — 200 OK
+
+```text
+HEALTH CHECK: 200 {"status":"ok","storage":"memory"}
+```
+
+#### validate.py (against FastAPI server, STORAGE=memory) — 11/11 PASSED
+
+```text
+============================================================
+ FINAL SUMMARY TABLE
+============================================================
+ Section 1 (Normal):    5/5 passed (100%)
+ Section 2 (Warning):   3/3 passed (100%)
+ Section 3 (Alert):     3/3 passed (100%)
+------------------------------------------------------------
+ Total Passed:          11 / 11 (100.0%)
+ SUCCESS CRITERIA:      MET
+============================================================
+```
+
+#### verify_phase1.py (against FastAPI server, STORAGE=memory) — 7/7 PASSED
+
+```text
+======================================================================
+  PHASE 1 VERIFICATION SUMMARY
+======================================================================
+  Passed: 7/7
+  Failed: 0/7
+  Result: ✅ ALL TESTS PASSED
+======================================================================
+```
+
+#### verify_phase2.py (against FastAPI server, STORAGE=memory) — 7/7 PASSED
+
+```text
+======================================================================
+  TEST 1: Register agent with retrieval + modification tools
+======================================================================
+  Status: 201
+  ✅ Agent registered
+
+======================================================================
+  TEST 2: Record baseline with mixed traces (6 retrieval + 6 modification)
+======================================================================
+  Status: 200
+  Clusters: retrieval (6 samples), modification (6 samples)
+  ✅ Per-intent clusters created
+
+======================================================================
+  TEST 3: Score '3 refunds' trace with include_all_clusters=true
+======================================================================
+  Intent cluster:  modification  |  Baseline used: modification
+  Score: 44.69 (warning)
+  All cluster scores: blended=49.39, retrieval=65.44, modification=44.69
+  ✅ Classified as 'modification'
+  ✅ Used modification cluster fingerprint
+  ✅ Different scores (delta: 20.75)
+
+======================================================================
+  TEST 4: Score retrieval trace — should use retrieval cluster
+======================================================================
+  intent_cluster=retrieval, baseline_used=retrieval, score=7.37 (normal)
+  ✅ Retrieval trace uses retrieval cluster
+
+======================================================================
+  TEST 5: Legacy /score-session (no auth, no intent)
+======================================================================
+  Score: 2.94, Class: normal (no intent_cluster in response)
+  ✅ Legacy works
+
+======================================================================
+  PHASE 2 VERIFICATION SUMMARY
+======================================================================
+  Passed: 7/7  |  Failed: 0/7  |  Result: ✅ ALL TESTS PASSED
+======================================================================
+```
+
+#### Phase 1 tests — STILL PASSING
+
+- `pytest tests/test_storage_contract.py` (STORAGE=memory): **15/15 passed** (0.12s)
+- `python tests/smoke_test_handlers.py` (STORAGE=memory): **7/7 passed**

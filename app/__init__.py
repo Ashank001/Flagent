@@ -1,0 +1,2 @@
+# Flagent FastAPI adapter package
+

@@ -1,0 +1,45 @@
+# Flagent .dockerignore
+# Keep the build context lean and secrets out of the image.
+
+# --- Secrets (never copy these) ---
+.env
+secrets/
+*-sa.json
+*serviceAccount*.json
+*.pem
+*.key
+
+# --- Git ---
+.git/
+.gitignore
+
+# --- Python cache ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# --- AWS / SAM (not needed in Docker) ---
+.aws-sam/
+samconfig.toml
+
+# --- SDK + test suite (not needed at runtime) ---
+flagent-sdk/
+tests/
+
+# --- Local working-copy data files (gitignored) ---
+baseline_output.json
+src/baseline_output.json
+src/scenarios_output.json
+
+# --- Misc ---
+*.md
+*.txt
+!requirements-app.txt
+!src/requirements.txt
+

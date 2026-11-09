@@ -1,8 +1,13 @@
 import requests
 import json
+import os
 import sys
 
-API_URL = "https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev/score-session"
+# Override with API_BASE_URL env var to point at a local server:
+#   $env:API_BASE_URL = "http://localhost:8000"
+#   python validate.py
+_base = os.environ.get("API_BASE_URL", "https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev")
+API_URL = _base.rstrip("/") + "/score-session"
 
 def run_test(section_name, expected_class, traces):
     print(f"\n{'='*60}")

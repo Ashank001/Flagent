@@ -1,0 +1,12 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pyyaml>=6.0
+google-cloud-firestore>=2.16.0
+httpx>=0.27.0
+# Handler dependencies (duplicated here so the Docker image is self-contained
+# without needing to install src/requirements.txt separately)
+google-genai>=1.0.0
+python-dotenv>=1.0.0
+# boto3 intentionally omitted — not needed for Render/Firestore deployment.
+# Install boto3>=1.34.0 separately only when STORAGE=dynamodb.
+
