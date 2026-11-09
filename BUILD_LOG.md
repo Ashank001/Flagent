@@ -606,3 +606,158 @@ AIVAR_PROJ/
         ├── score_session.py      # Lambda handler (placeholder)
         └── requirements.txt
 ```
+
+
+---
+
+# host-migration — Free-Tier Hosting (Render + Firestore + Vercel)
+
+> Migrating from deleted AWS stack (Lambda, API Gateway, DynamoDB, Amplify) to free hosting.
+> Branch: `host-migration` (cut from `v2-plugin`).
+> AWS/SAM version stays redeployable from the same codebase via `STORAGE=dynamodb`.
+
+## Phase 0: Secret Hygiene
+
+### What Changed
+
+Updated `.gitignore` to replace the blanket `*.json` rule with targeted secret patterns:
+- `.env`, `.env.*`, `!.env.example`
+- `*serviceAccount*.json`, `*-sa.json`, `*firebase-adminsdk*.json`
+- `secrets/`, `*.pem`, `*.key`
+
+### Verification
+
+#### `git ls-files` — no secret files tracked
+
+```text
+.env.example
+.gitignore
+BUILD_LOG.md
+README.md
+agent_interceptor.py
+dashboard.html
+dashboard.zip
+dashboard_v2.html
+flagent-sdk/examples/minimal.py
+flagent-sdk/flagent/__init__.py
+flagent-sdk/flagent/client.py
+flagent-sdk/flagent/exceptions.py
+flagent-sdk/flagent/models.py
+flagent-sdk/flagent/session.py
+flagent-sdk/pyproject.toml
+flagent-sdk/tests/__init__.py
+flagent-sdk/tests/test_enforce_mode.py
+flagent-sdk/tests/test_fail_open.py
+flagent-sdk/tests/test_shadow_mode.py
+flagent-sdk/tests/test_trace_capture.py
+real_drift_test.py
+requirements.txt
+scenarios_output.json
+src/agent_registry.py
+src/auth.py
+src/baseline_recorder.py
+src/deviation_scorer.py
+src/drift_detector.py
+src/gemini_utils.py
+src/generate_scenarios/generate_scenarios.py
+src/intent_classifier.py
+src/llm_provider.py
+src/mock_agent.py
+src/production_monitor.py
+src/record_baseline/record_baseline.py
+src/register_agent/register_agent.py
+src/requirements.txt
+src/run_baseline/run_baseline.py
+src/run_demo/run_demo.py
+src/scenario_generator.py
+src/score_session/score_session.py
+template.yaml
+test_calibration.py
+test_production_monitor.py
+test_quota.py
+test_scenarios.py
+test_score.py
+validate.py
+verify_phase1.py
+verify_phase2.py
+```
+
+#### `git log --all --stat` — no secret files in any commit
+
+All 15 commits across all branches contain only: `.py`, `.md`, `.html`, `.yaml`, `.toml`, `.txt`, `.zip`, `.json` (`scenarios_output.json` — test data), and `.env.example`. No `.env`, `*-sa.json`, `*serviceAccount*`, `*.pem`, `*.key`, or `secrets/` ever appeared.
+
+#### Secret string grep — HEAD (all 0 matches)
+
+```text
+=== grep HEAD: AIza ===
+(exit 1)
+
+=== grep HEAD: private_key ===
+(exit 1)
+
+=== grep HEAD: BEGIN PRIVATE KEY ===
+(exit 1)
+
+=== grep HEAD: AKIA ===
+(exit 1)
+
+=== grep HEAD: ASIA ===
+(exit 1)
+```
+
+#### Secret string grep — full git history (all empty)
+
+```text
+=== git log -S AIza (all branches) ===
+(exit 0)
+
+=== git log -S private_key (all branches) ===
+(exit 0)
+
+=== git log -S "BEGIN PRIVATE KEY" (all branches) ===
+(exit 0)
+
+=== git log -S AKIA (all branches) ===
+(exit 0)
+
+=== git log -S ASIA (all branches) ===
+(exit 0)
+```
+
+#### `.env` never committed
+
+```text
+=== git log --all --oneline -- .env ===
+(exit 0)
+```
+
+Empty — `.env` was never committed on any branch.
+
+#### `dashboard.zip` inspection
+
+Extracted to temp dir. Contains 1 file: `dashboard.html` (50,442 bytes).
+
+Secret grep (all 0 matches):
+```text
+grep 'AIza': 0 matches
+grep 'private_key': 0 matches
+grep 'BEGIN PRIVATE KEY': 0 matches
+grep 'AKIA': 0 matches
+grep 'ASIA': 0 matches
+```
+
+URLs found:
+```text
+https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js
+https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap
+https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev';
+```
+
+The AWS API Gateway URL (`t2xtoo4zpg.execute-api...`) is the now-deleted deployment endpoint — not a secret (public API URL). Same URL exists in tracked `dashboard.html` and `dashboard_v2.html`. Will be externalized to `config.js` in Phase 4.
+
+### Commit
+
+```text
+[host-migration 1cbfac9] chore(host-migration): harden .gitignore with targeted secret patterns
+ 1 file changed, 14 insertions(+), 6 deletions(-)
+```
