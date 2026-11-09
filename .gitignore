@@ -1,21 +1,29 @@
-# Environment secrets
+# ── Secrets & credentials ──────────────────────────
 .env
-*.json
-# Python
+.env.*
+!.env.example
+*serviceAccount*.json
+*-sa.json
+*firebase-adminsdk*.json
+secrets/
+*.pem
+*.key
+
+# ── Python ─────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.egg-info/
 dist/
 build/
 
-# SAM / AWS
+# ── SAM / AWS ──────────────────────────────────────
 .aws-sam/
 samconfig.toml
 
-# IDE
+# ── IDE ────────────────────────────────────────────
 .vscode/
 .idea/
 
-# OS
+# ── OS ─────────────────────────────────────────────
 .DS_Store
 Thumbs.db
