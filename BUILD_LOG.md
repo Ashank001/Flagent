@@ -761,3 +761,120 @@ The AWS API Gateway URL (`t2xtoo4zpg.execute-api...`) is the now-deleted deploym
 [host-migration 1cbfac9] chore(host-migration): harden .gitignore with targeted secret patterns
  1 file changed, 14 insertions(+), 6 deletions(-)
 ```
+
+## Phase 1: Storage Interface
+
+### What Was Built
+
+1. **`src/storage/base.py`** — Abstract `StorageBackend` with 9 methods across 3 domains:
+   - Agents: `create_agent`, `get_agent`, `update_agent_status`
+   - Baselines: `put_baseline`, `get_baseline`, `get_all_baselines`
+   - Sessions: `put_session`, `get_session`, `list_recent_sessions`
+
+2. **`src/storage/memory.py`** — Thread-safe in-memory backend for tests. No external deps.
+
+3. **`src/storage/dynamodb.py`** — DynamoDB backend preserving all v2 behavior including Decimal handling. `boto3` imported at module level but only loaded when `STORAGE=dynamodb` (lazy factory). Baselines use the same single-item schema as v2 for backward compat.
+
+4. **`src/storage/firestore.py`** — Firestore backend (Spark free tier):
+   - `agents/{agent_id}` — registry doc
+   - `agents/{agent_id}/baselines/{cluster}` — one doc per cluster
+   - `agents/{agent_id}/sessions/{session_id}` — session docs
+   - Credentials from `FIREBASE_SERVICE_ACCOUNT_JSON` (JSON string → in-memory, never to disk) or `GOOGLE_APPLICATION_CREDENTIALS`
+   - TTL cache (default 60s, `FIRESTORE_CACHE_TTL_SECONDS`) on agent/baseline reads; invalidated on write
+
+5. **`src/storage/factory.py`** — `get_storage()` singleton by `STORAGE` env; `reset_storage()` for tests.
+
+6. **Refactored handlers** — all boto3/DynamoDB calls removed:
+   - `src/agent_registry.py`, `src/auth.py`
+   - `src/score_session/score_session.py` — legacy mode now reads from `data/baseline_output.json`
+   - `src/record_baseline/record_baseline.py`
+   - `src/production_monitor.py`, `src/baseline_recorder.py`
+   - `src/generate_scenarios/generate_scenarios.py` — stray unused `boto3` import removed
+
+7. **`template.yaml`** — `STORAGE: dynamodb` added to Globals.
+
+8. **`data/baseline_output.json`** — canonical fingerprint, tracked in git; legacy scoring reads from here on deploy.
+
+### Verification
+
+#### Contract tests: `pytest tests/test_storage_contract.py` (STORAGE=memory) — 15/15 PASSED
+
+```text
+tests/test_storage_contract.py::TestAgentCRUD::test_create_and_get_agent[MemoryStorage] PASSED
+tests/test_storage_contract.py::TestAgentCRUD::test_get_missing_agent_returns_none[MemoryStorage] PASSED
+tests/test_storage_contract.py::TestAgentCRUD::test_duplicate_create_raises[MemoryStorage] PASSED
+tests/test_storage_contract.py::TestAgentCRUD::test_update_agent_status[MemoryStorage] PASSED
+tests/test_storage_contract.py::TestAgentCRUD::test_update_missing_agent_raises[MemoryStorage] PASSED
+tests/test_storage_contract.py::TestBaselines::test_put_and_get_blended[MemoryStorage] PASSED
+tests/test_storage_contract.py::TestBaselines::test_put_and_get_per_cluster[MemoryStorage] PASSED
+tests/test_storage_contract.py::TestBaselines::test_get_all_baselines[MemoryStorage] PASSED
+tests/test_storage_contract.py::TestBaselines::test_get_missing_baseline_returns_none[MemoryStorage] PASSED
+tests/test_storage_contract.py::TestBaselines::test_cache_invalidation_on_write[MemoryStorage] PASSED
+tests/test_storage_contract.py::TestSessions::test_put_and_get_session[MemoryStorage] PASSED
+tests/test_storage_contract.py::TestSessions::test_get_missing_session_returns_none[MemoryStorage] PASSED
+tests/test_storage_contract.py::TestSessions::test_list_recent_sessions_ordering_and_limit[MemoryStorage] PASSED
+tests/test_storage_contract.py::TestSessions::test_list_sessions_empty[MemoryStorage] PASSED
+tests/test_storage_contract.py::TestBaselineFile::test_canonical_baseline_file_exists PASSED
+
+============================= 15 passed in 0.14s ==============================
+```
+
+#### SDK tests: 19/19 PASSED (unchanged)
+
+```text
+============================= 19 passed in 1.20s ==============================
+```
+
+#### Handler smoke test: `python tests/smoke_test_handlers.py` (STORAGE=memory) — 7/7 PASSED
+
+```text
+--- TEST 1: Legacy /score-session ---
+  Status: 200  |  Score: 2.94, Class: normal  |  PASS
+
+--- TEST 2: Legacy alert ---
+  Score: 98.04, Class: alert  |  PASS
+
+--- TEST 3: Register agent ---
+  Status: 201  |  Key starts with: fgnt_i3kEu1T...  |  PASS
+
+--- TEST 4: Record baseline ---
+  Status: 200  |  Fingerprint: {'lookup': 0.8, 'refund': 0.4}  |  PASS
+
+--- TEST 5: Authenticated score ---
+  Status: 200  |  Score: 3.97, Class: normal  |  PASS
+
+--- TEST 6: 401 on bad key ---
+  Status: 401  |  PASS
+
+--- TEST 7: Duplicate register returns 409 ---
+  Status: 409  |  PASS
+
+RESULTS: 7/7 passed
+```
+
+#### grep boto3/dynamodb/Table(/firestore across src/ — ALL hits in `src/storage/`
+
+```text
+=== boto3 hits ===
+  src\storage\base.py:6       (comment)
+  src\storage\dynamodb.py:5   (comment)
+  src\storage\dynamodb.py:13  import boto3
+  src\storage\dynamodb.py:42  boto3.resource(...)
+  src\storage\dynamodb.py:213 boto3.dynamodb.conditions...
+  src\storage\factory.py:9    (comment)
+
+=== Table( hits ===
+  src\storage\dynamodb.py (11 hits) — all in _table() helper
+
+=== firestore hits ===
+  src\storage\base.py, factory.py, firestore.py only
+```
+
+No `boto3`, `dynamodb`, `Table(`, or `firestore` calls outside `src/storage/`.
+
+### Commit
+
+```text
+[host-migration e502792] feat(host-migration): Phase 1 — storage interface + Firestore/memory backends
+ 17 files changed, 1232 insertions(+), 322 deletions(-)
+```
