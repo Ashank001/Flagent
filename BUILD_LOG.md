@@ -1037,3 +1037,137 @@ HEALTH CHECK: 200 {"status":"ok","storage":"memory"}
 - `pytest app/test_routes.py`: **10/10 passed**
 - `python tests/smoke_test_handlers.py` (STORAGE=memory): **7/7 passed**
 - Docker container verification: **`validate.py` 11/11**, **`verify_phase1.py` 7/7**, **`verify_phase2.py` 7/7**
+
+
+## Phase 3: Seed Script + Live Firestore Verification
+
+### What Was Built
+
+1. **`scripts/seed_baseline.py`** — Idempotent baseline seed script:
+   - Loads canonical baseline fingerprint from `src/data/baseline_output.json`.
+   - Registers `mock-customer-support` agent in storage if not already present.
+   - Overwrites `blended` baseline in storage with pre-computed statistics.
+   - Strictly 0 LLM calls; idempotent across repeated executions.
+   - Verified by running twice sequentially against live Firestore.
+
+2. **Default Base URL Updates & Re-runnability**:
+   - `validate.py`, `verify_phase1.py`, `verify_phase2.py`: default API base URL switched from deleted AWS API Gateway to `http://localhost:8000`.
+   - `agent_interceptor.py`, `real_drift_test.py`: updated to read `API_BASE_URL` env var (defaulting to `http://localhost:8000`).
+   - `verify_phase1.py`: dynamically generates unique agent IDs (`test-agent-retrieval-{uuid}`, `test-agent-modification-{uuid}`) per run; updated error messaging to refer to generic storage instead of DynamoDB.
+   - `verify_phase2.py`: dynamically generates unique agent ID (`test-mixed-agent-v2-{uuid}`) per run; updated error messaging.
+
+3. **In-Memory TTL Cache Unit Tests**:
+   - Added `TestTTLCache` in `tests/test_storage_contract.py` covering `set`, `get`, TTL expiry, `invalidate`, and `invalidate_prefix`.
+
+4. **Live Firestore Contract Testing**:
+   - Executed `tests/test_storage_contract.py` with `FIRESTORE_LIVE_TEST=1` against live Google Firestore.
+   - Created test-prefixed collections (`test_agents_<timestamp>`) and cleaned up all documents and subcollections afterwards to conserve quota.
+
+5. **Live Docker Container Testing with `STORAGE=firestore`**:
+   - Launched Docker container with `-e STORAGE=firestore` and service account mounted as read-only volume.
+   - Executed `validate.py`, `verify_phase1.py`, `verify_phase2.py`, SDK unit tests, and live SDK end-to-end integration test against the container.
+
+### New Files
+
+| File | Purpose |
+|---|---|
+| `scripts/seed_baseline.py` | Idempotent baseline seeder (no LLM calls) |
+
+### Modified Files
+
+| File | What Changed |
+|---|---|
+| `validate.py` | Default base URL changed to `http://localhost:8000` |
+| `verify_phase1.py` | Default URL `http://localhost:8000`, unique agent IDs per run, fixed stale DynamoDB error messages |
+| `verify_phase2.py` | Default URL `http://localhost:8000`, unique agent ID per run, fixed stale DynamoDB error messages |
+| `agent_interceptor.py` | Reads `API_BASE_URL` env var, defaults to `http://localhost:8000` |
+| `real_drift_test.py` | Reads `API_BASE_URL` env var, defaults to `http://localhost:8000` |
+| `tests/test_storage_contract.py` | Added `TestTTLCache` unit test suite (4 tests) |
+
+### Verification
+
+#### 1. Live Firestore Contract Tests: `FIRESTORE_LIVE_TEST=1 pytest tests/test_storage_contract.py -v` — 34/34 PASSED
+
+```text
+tests/test_storage_contract.py::TestAgentCRUD::test_create_and_get_agent[MemoryStorage] PASSED [  2%]
+tests/test_storage_contract.py::TestAgentCRUD::test_create_and_get_agent[FirestoreStorage] PASSED [  5%]
+tests/test_storage_contract.py::TestAgentCRUD::test_get_missing_agent_returns_none[MemoryStorage] PASSED [  8%]
+tests/test_storage_contract.py::TestAgentCRUD::test_get_missing_agent_returns_none[FirestoreStorage] PASSED [ 11%]
+tests/test_storage_contract.py::TestAgentCRUD::test_duplicate_create_raises[MemoryStorage] PASSED [ 14%]
+tests/test_storage_contract.py::TestAgentCRUD::test_duplicate_create_raises[FirestoreStorage] PASSED [ 17%]
+tests/test_storage_contract.py::TestAgentCRUD::test_update_agent_status[MemoryStorage] PASSED [ 20%]
+tests/test_storage_contract.py::TestAgentCRUD::test_update_agent_status[FirestoreStorage] PASSED [ 23%]
+tests/test_storage_contract.py::TestAgentCRUD::test_update_missing_agent_raises[MemoryStorage] PASSED [ 26%]
+tests/test_storage_contract.py::TestAgentCRUD::test_update_missing_agent_raises[FirestoreStorage] PASSED [ 29%]
+tests/test_storage_contract.py::TestBaselines::test_put_and_get_blended[MemoryStorage] PASSED [ 32%]
+tests/test_storage_contract.py::TestBaselines::test_put_and_get_blended[FirestoreStorage] PASSED [ 35%]
+tests/test_storage_contract.py::TestBaselines::test_put_and_get_per_cluster[MemoryStorage] PASSED [ 38%]
+tests/test_storage_contract.py::TestBaselines::test_put_and_get_per_cluster[FirestoreStorage] PASSED [ 41%]
+tests/test_storage_contract.py::TestBaselines::test_get_all_baselines[MemoryStorage] PASSED [ 44%]
+tests/test_storage_contract.py::TestBaselines::test_get_all_baselines[FirestoreStorage] PASSED [ 47%]
+tests/test_storage_contract.py::TestBaselines::test_get_missing_baseline_returns_none[MemoryStorage] PASSED [ 50%]
+tests/test_storage_contract.py::TestBaselines::test_get_missing_baseline_returns_none[FirestoreStorage] PASSED [ 52%]
+tests/test_storage_contract.py::TestBaselines::test_cache_invalidation_on_write[MemoryStorage] PASSED [ 55%]
+tests/test_storage_contract.py::TestBaselines::test_cache_invalidation_on_write[FirestoreStorage] PASSED [ 58%]
+tests/test_storage_contract.py::TestSessions::test_put_and_get_session[MemoryStorage] PASSED [ 61%]
+tests/test_storage_contract.py::TestSessions::test_put_and_get_session[FirestoreStorage] PASSED [ 64%]
+tests/test_storage_contract.py::TestSessions::test_get_missing_session_returns_none[MemoryStorage] PASSED [ 67%]
+tests/test_storage_contract.py::TestSessions::test_get_missing_session_returns_none[FirestoreStorage] PASSED [ 70%]
+tests/test_storage_contract.py::TestSessions::test_list_recent_sessions_ordering_and_limit[MemoryStorage] PASSED [ 73%]
+tests/test_storage_contract.py::TestSessions::test_list_recent_sessions_ordering_and_limit[FirestoreStorage] PASSED [ 76%]
+tests/test_storage_contract.py::TestSessions::test_list_sessions_empty[MemoryStorage] PASSED [ 79%]
+tests/test_storage_contract.py::TestSessions::test_list_sessions_empty[FirestoreStorage] PASSED [ 82%]
+tests/test_storage_contract.py::TestBaselineFile::test_canonical_baseline_file_exists PASSED [ 85%]
+tests/test_storage_contract.py::TestBaselineFile::test_baseline_resolves_from_handler_package_path PASSED [ 88%]
+tests/test_storage_contract.py::TestTTLCache::test_cache_set_and_get PASSED [ 91%]
+tests/test_storage_contract.py::TestTTLCache::test_cache_expiry PASSED   [ 94%]
+tests/test_storage_contract.py::TestTTLCache::test_cache_invalidate PASSED [ 97%]
+tests/test_storage_contract.py::TestTTLCache::test_cache_invalidate_prefix PASSED [100%]
+
+============================= 34 passed in 6.98s ==============================
+```
+
+#### 2. Seed Baseline Idempotency (STORAGE=firestore)
+
+```text
+[Seed] Storage backend: FirestoreStorage
+[Seed] Target agent ID: mock-customer-support
+[Seed] Registering agent 'mock-customer-support'...
+[Seed] Agent registered. (API key generated: fgnt_kXTbX...)
+[Seed] Put blended baseline for 'mock-customer-support' (50 scenarios).
+[Seed] Successfully verified baseline in storage.
+
+Result: {
+  "agent_id": "mock-customer-support",
+  "status": "seeded",
+  "scenario_count": 50,
+  "api_key": "fgnt_kXTbX..."
+}
+
+--- Second run (Idempotency check) ---
+[Seed] Storage backend: FirestoreStorage
+[Seed] Target agent ID: mock-customer-support
+[Seed] Agent 'mock-customer-support' already exists in registry.
+[Seed] Put blended baseline for 'mock-customer-support' (50 scenarios).
+[Seed] Successfully verified baseline in storage.
+
+Result: {
+  "agent_id": "mock-customer-support",
+  "status": "seeded",
+  "scenario_count": 50,
+  "api_key": null
+}
+```
+
+#### 3. Container Verification (`STORAGE=firestore`)
+
+- Health check:
+```text
+{"status":"ok","storage":"firestore"}
+```
+
+- `validate.py`: **11/11 PASSED (100%)**
+- `verify_phase1.py`: **7/7 PASSED**
+- `verify_phase2.py`: **7/7 PASSED**
+- `flagent-sdk/tests`: **19/19 PASSED**
+- Live SDK Enforce Integration: **PASSED**

@@ -17,11 +17,16 @@ import requests
 import json
 import os
 import sys
+import uuid
 
 # Override with API_BASE_URL env var to point at a local server:
 #   $env:API_BASE_URL = "http://localhost:8000"
 #   python verify_phase1.py
-API_URL = os.environ.get("API_BASE_URL", "https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev").rstrip("/")
+API_URL = os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
+
+RUN_SUFFIX = uuid.uuid4().hex[:8]
+AGENT_A_ID = os.environ.get("VERIFY_AGENT_A_ID", f"test-agent-retrieval-{RUN_SUFFIX}")
+AGENT_B_ID = os.environ.get("VERIFY_AGENT_B_ID", f"test-agent-modification-{RUN_SUFFIX}")
 
 
 def section(title):
@@ -45,10 +50,10 @@ def main():
     # ------------------------------------------------------------------
     # TEST 1: Register Agent A (retrieval-heavy)
     # ------------------------------------------------------------------
-    section("TEST 1: Register Agent A (retrieval-heavy)")
+    section(f"TEST 1: Register Agent A ({AGENT_A_ID})")
 
     resp_a = requests.post(f"{API_URL}/agents/register", json={
-        "agent_id": "test-agent-retrieval",
+        "agent_id": AGENT_A_ID,
         "name": "Test Retrieval Agent",
         "tool_categories": {
             "search_products": "retrieval",
@@ -78,10 +83,10 @@ def main():
     # ------------------------------------------------------------------
     # TEST 2: Register Agent B (modification-heavy)
     # ------------------------------------------------------------------
-    section("TEST 2: Register Agent B (modification-heavy)")
+    section(f"TEST 2: Register Agent B ({AGENT_B_ID})")
 
     resp_b = requests.post(f"{API_URL}/agents/register", json={
-        "agent_id": "test-agent-modification",
+        "agent_id": AGENT_B_ID,
         "name": "Test Modification Agent",
         "tool_categories": {
             "issue_refund": "modification",
@@ -109,7 +114,7 @@ def main():
 
     if not key_a or not key_b:
         print("\n⚠️  Cannot proceed without both API keys. Exiting.")
-        print("  Delete test agents from DynamoDB AgentRegistry and re-run.")
+        print("  Delete test agents from storage or use a new unique ID.")
         sys.exit(1)
 
     # ------------------------------------------------------------------
@@ -131,7 +136,7 @@ def main():
     ]
 
     resp_ba = requests.post(
-        f"{API_URL}/agents/test-agent-retrieval/baseline",
+        f"{API_URL}/agents/{AGENT_A_ID}/baseline",
         json={"scenarios": retrieval_scenarios},
         headers={"x-flagent-key": key_a},
         timeout=30,
@@ -166,7 +171,7 @@ def main():
     ]
 
     resp_bb = requests.post(
-        f"{API_URL}/agents/test-agent-modification/baseline",
+        f"{API_URL}/agents/{AGENT_B_ID}/baseline",
         json={"scenarios": modification_scenarios},
         headers={"x-flagent-key": key_b},
         timeout=30,
@@ -199,7 +204,7 @@ def main():
     # Score against Agent A (retrieval)
     resp_sa = requests.post(
         f"{API_URL}/score-session",
-        json={"trace": test_trace, "agent_id": "test-agent-retrieval"},
+        json={"trace": test_trace, "agent_id": AGENT_A_ID},
         headers={"x-flagent-key": key_a},
         timeout=15,
     )
@@ -211,7 +216,7 @@ def main():
     # Score against Agent B (modification)
     resp_sb = requests.post(
         f"{API_URL}/score-session",
-        json={"trace": test_trace, "agent_id": "test-agent-modification"},
+        json={"trace": test_trace, "agent_id": AGENT_B_ID},
         headers={"x-flagent-key": key_b},
         timeout=15,
     )
@@ -243,7 +248,7 @@ def main():
 
     resp_bad = requests.post(
         f"{API_URL}/score-session",
-        json={"trace": test_trace, "agent_id": "test-agent-retrieval"},
+        json={"trace": test_trace, "agent_id": AGENT_A_ID},
         headers={"x-flagent-key": "fgnt_THIS_IS_A_FAKE_KEY_12345"},
         timeout=15,
     )

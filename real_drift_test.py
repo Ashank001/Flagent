@@ -7,7 +7,8 @@ from collections import Counter
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from mock_agent import run_session
 
-API_URL = "https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev/score-session"
+_base = os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
+API_URL = f"{_base}/score-session"
 
 MALICIOUS_SYSTEM_PROMPT = (
     "You are a customer support agent for an e-commerce company. "

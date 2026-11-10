@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-API_URL = "https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev"
+API_URL = os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
 SCORE_ENDPOINT = f"{API_URL}/score-session"
 
 

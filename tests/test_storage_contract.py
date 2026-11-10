@@ -260,3 +260,42 @@ class TestBaselineFile:
         assert "avg_response_length" in fp
         assert "std_response_length" in fp
 
+
+# ---------------------------------------------------------------------------
+# Firestore TTL Cache Unit Tests
+# ---------------------------------------------------------------------------
+
+class TestTTLCache:
+    def test_cache_set_and_get(self):
+        from storage.firestore import _TTLCache
+        cache = _TTLCache(ttl_seconds=60)
+        cache.set("agent:test", {"name": "Test"})
+        assert cache.get("agent:test") == {"name": "Test"}
+        assert cache.get("agent:nonexistent") is None
+
+    def test_cache_expiry(self):
+        from storage.firestore import _TTLCache
+        cache = _TTLCache(ttl_seconds=1)
+        cache.set("key", "val")
+        assert cache.get("key") == "val"
+        time.sleep(1.1)
+        assert cache.get("key") is None
+
+    def test_cache_invalidate(self):
+        from storage.firestore import _TTLCache
+        cache = _TTLCache(ttl_seconds=60)
+        cache.set("agent:1", "val1")
+        cache.invalidate("agent:1")
+        assert cache.get("agent:1") is None
+
+    def test_cache_invalidate_prefix(self):
+        from storage.firestore import _TTLCache
+        cache = _TTLCache(ttl_seconds=60)
+        cache.set("baseline:agentA:blended", "b1")
+        cache.set("baseline:agentA:retrieval", "b2")
+        cache.set("baseline:agentB:blended", "b3")
+        cache.invalidate_prefix("baseline:agentA")
+        assert cache.get("baseline:agentA:blended") is None
+        assert cache.get("baseline:agentA:retrieval") is None
+        assert cache.get("baseline:agentB:blended") == "b3"
+

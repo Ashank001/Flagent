@@ -17,13 +17,15 @@ import requests
 import json
 import os
 import sys
+import uuid
 
 # Override with API_BASE_URL env var to point at a local server:
 #   $env:API_BASE_URL = "http://localhost:8000"
 #   python verify_phase2.py
-API_URL = os.environ.get("API_BASE_URL", "https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev").rstrip("/")
+API_URL = os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
 
-AGENT_ID = "test-mixed-agent-v2"
+RUN_SUFFIX = uuid.uuid4().hex[:8]
+AGENT_ID = os.environ.get("VERIFY_PHASE2_AGENT_ID", f"test-mixed-agent-v2-{RUN_SUFFIX}")
 
 
 def section(title):
@@ -73,7 +75,7 @@ def main():
         if test_result("Agent registered", True):
             passed += 1
     elif resp.status_code == 409:
-        print("  Agent already exists. Delete from DynamoDB and re-run, or use a different ID.")
+        print("  Agent already exists. Delete from storage and re-run, or use a different ID.")
         sys.exit(1)
     else:
         test_result("Agent registered", False, resp.text)
