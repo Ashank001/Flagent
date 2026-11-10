@@ -1171,3 +1171,31 @@ Result: {
 - `verify_phase2.py`: **7/7 PASSED**
 - `flagent-sdk/tests`: **19/19 PASSED**
 - Live SDK Enforce Integration: **PASSED**
+
+---
+
+### Phase 4: Deployment Configurations & Documentation Update
+
+#### 1. Created `render.yaml`
+- Render Blueprint for free Web Service.
+- Runtime: `docker` (`./Dockerfile`).
+- Health check path: `/health`.
+- Environment variables: `STORAGE=firestore`, `PORT=8000`, `ALLOWED_ORIGINS=*`, `FIRESTORE_ROOT_COLLECTION=agents`, `FIRESTORE_CACHE_TTL_SECONDS=300`.
+- Secrets marked `sync: false` (names only, no values): `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `GEMINI_API_KEY`.
+
+#### 2. Created `config.js` & Updated Dashboards
+- `config.js` sets `window.FLAGENT_CONFIG.API_BASE_URL` defaulting to `http://localhost:8000`.
+- `dashboard.html` and `dashboard_v2.html` updated to load `config.js` and use `(window.FLAGENT_CONFIG && window.FLAGENT_CONFIG.API_BASE_URL) || 'http://localhost:8000'`.
+- Decommissioned AWS API Gateway endpoint removed from active HTML source.
+- `dashboard.zip` rebuilt containing updated `dashboard.html` and `config.js`.
+
+#### 3. Updated `.env.example`
+- Complete documentation of all environment variables across `memory`, `firestore`, and `dynamodb` backends, server settings, and cloud keys.
+
+#### 4. Updated `README.md`
+- Added comprehensive "Hosting history and migration" section.
+- Added "Deploy on Render" with Blueprint instructions.
+- Added "Deploy on AWS (SAM)" with explicit note that the AWS stack is not running live and that `sam build` was re-verified locally only.
+- Added "v2 Status and Honest Limitations" with transparent breakdown of free tier spin-down, Gemini quota, and Firestore Spark limits.
+- Updated all verification commands to point to local/container endpoints.
+

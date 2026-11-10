@@ -7,6 +7,7 @@
     <meta name="description" content="Multi-agent behavioral governance dashboard with real-time scoring, per-intent baselines, and onboarding wizard.">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="config.js"></script>
     <style>
         :root {
             --bg-primary: #06060f;
@@ -762,7 +763,7 @@ send_email: communication"></textarea>
 // ============================================================
 // Configuration
 // ============================================================
-const API_URL = 'https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev';
+const API_URL = (window.FLAGENT_CONFIG && window.FLAGENT_CONFIG.API_BASE_URL) || 'http://localhost:8000';
 
 // ============================================================
 // State

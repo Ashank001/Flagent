@@ -7,6 +7,7 @@
     <meta name="description" content="PS-4.1 Agent Behavioral Baseline Builder Dashboard — Monitor AI agent behavior, detect anomalies, and track baseline drift in real-time.">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="config.js"></script>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         
@@ -710,7 +711,7 @@
 </div>
 
 <script>
-    const API_URL = 'https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev';
+    const API_URL = (window.FLAGENT_CONFIG && window.FLAGENT_CONFIG.API_BASE_URL) || 'http://localhost:8000';
     
     // Live Governance Demo
     async function runLiveDemo() {
