@@ -23,16 +23,21 @@ from storage.factory import get_storage
 
 def process_session(user_message: str, agent_id: str = "mock-customer-support", system_prompt: str | None = None) -> dict:
     """Run session, score it, save to storage, and return results."""
-    # 1. Load Fingerprint from canonical data file
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    baseline_path = os.path.join(repo_root, "data", "baseline_output.json")
+    # 1. Load Fingerprint from canonical data file (relative to module package root)
+    package_root = os.path.dirname(os.path.abspath(__file__))
+    baseline_path = os.path.join(package_root, "data", "baseline_output.json")
     if not os.path.exists(baseline_path):
-        # Fallback to legacy location
-        baseline_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "baseline_output.json"
-        )
+        candidates = [
+            os.path.join(os.path.dirname(package_root), "src", "data", "baseline_output.json"),
+            os.path.join(os.path.dirname(package_root), "data", "baseline_output.json"),
+            os.path.join(package_root, "baseline_output.json"),
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                baseline_path = c
+                break
     if not os.path.exists(baseline_path):
-        raise RuntimeError("baseline_output.json not found. Run baseline_recorder.py first.")
+        raise RuntimeError(f"baseline_output.json not found at {baseline_path}. Run baseline_recorder.py first.")
 
     with open(baseline_path, "r", encoding="utf-8") as f:
         baseline = json.load(f)

@@ -19,12 +19,10 @@ RUN pip install --no-cache-dir -r src-requirements.txt
 
 # ---------------------------------------------------------------------------
 # 3. Copy application source
-#    - src/  : all Lambda handlers + storage layer
-#    - data/ : canonical baseline fingerprint (required for legacy scoring)
+#    - src/  : all Lambda handlers, storage layer, and src/data/ baseline
 #    - app/  : FastAPI adapter
 # ---------------------------------------------------------------------------
 COPY src/ src/
-COPY data/ data/
 COPY app/ app/
 
 # ---------------------------------------------------------------------------

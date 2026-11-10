@@ -232,8 +232,8 @@ class TestSessions:
 
 class TestBaselineFile:
     def test_canonical_baseline_file_exists(self):
-        """data/baseline_output.json must exist and be valid."""
-        path = os.path.join(_REPO_ROOT, "data", "baseline_output.json")
+        """src/data/baseline_output.json must exist and be valid."""
+        path = os.path.join(_REPO_ROOT, "src", "data", "baseline_output.json")
         assert os.path.exists(path), (
             f"Canonical baseline file missing: {path}. "
             f"Legacy scoring and seeding will fail on deploy."
@@ -243,6 +243,20 @@ class TestBaselineFile:
         assert "fingerprint" in data, "baseline_output.json must have a 'fingerprint' key"
         fp = data["fingerprint"]
         assert "tool_frequency" in fp
+
+    def test_baseline_resolves_from_handler_package_path(self):
+        """Handler package path must resolve and read src/data/baseline_output.json."""
+        from score_session import score_session
+        handler_dir = os.path.dirname(os.path.abspath(score_session.__file__))
+        package_root = os.path.dirname(handler_dir)
+        baseline_path = os.path.join(package_root, "data", "baseline_output.json")
+        assert os.path.exists(baseline_path), (
+            f"Handler package cannot find baseline file at: {baseline_path}"
+        )
+        with open(baseline_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        assert "fingerprint" in data, "baseline file in package path has no fingerprint"
+        fp = data["fingerprint"]
         assert "avg_response_length" in fp
         assert "std_response_length" in fp
 

@@ -102,11 +102,24 @@ def handler(event, context):
             # LEGACY MODE — exact v1 behavior, no intent classification
             agent_id = body.get("agent_id", "mock-customer-support")
 
-            # Load fingerprint from canonical data file
-            repo_root = os.path.dirname(os.path.dirname(
-                os.path.dirname(os.path.abspath(__file__))
-            ))
-            baseline_path = os.path.join(repo_root, "data", "baseline_output.json")
+            # Load fingerprint from canonical data file (relative to module package root)
+            package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            baseline_path = os.path.join(package_root, "data", "baseline_output.json")
+            if not os.path.exists(baseline_path):
+                candidates = [
+                    os.path.join(os.path.dirname(package_root), "src", "data", "baseline_output.json"),
+                    os.path.join(os.path.dirname(package_root), "data", "baseline_output.json"),
+                    os.path.join(package_root, "baseline_output.json"),
+                ]
+                for c in candidates:
+                    if os.path.exists(c):
+                        baseline_path = c
+                        break
+            if not os.path.exists(baseline_path):
+                raise FileNotFoundError(
+                    f"baseline_output.json not found at {baseline_path}. "
+                    "Ensure src/data/baseline_output.json is packaged."
+                )
 
             with open(baseline_path, "r", encoding="utf-8") as f:
                 baseline = json.load(f)

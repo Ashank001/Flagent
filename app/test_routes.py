@@ -118,9 +118,9 @@ class TestRoutes:
         # The actual HTTP test happens when we curl the running container.
 
     def test_baseline_file_exists(self):
-        baseline = _REPO_ROOT / "data" / "baseline_output.json"
+        baseline = _REPO_ROOT / "src" / "data" / "baseline_output.json"
         assert baseline.exists(), (
-            f"data/baseline_output.json not found at {baseline}. "
+            f"src/data/baseline_output.json not found at {baseline}. "
             "Required for legacy scoring mode and must be tracked in git."
         )
         assert baseline.stat().st_size > 0

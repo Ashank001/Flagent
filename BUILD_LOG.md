@@ -922,10 +922,17 @@ No `boto3`, `dynamodb`, `Table(`, or `firestore` calls outside `src/storage/`.
 | `verify_phase1.py` | Added `API_BASE_URL` env var support (line 18–21) |
 | `verify_phase2.py` | Added `API_BASE_URL` env var support (line 18–21) |
 
-### SAM Packaging Gap (Documented)
+### SAM Packaging Gap (Resolved)
 
-> [!WARNING]
-> `template.yaml` uses `CodeUri: src/` for all Lambda functions. `data/baseline_output.json` is at the repo root, NOT inside `src/`. SAM will NOT package `data/baseline_output.json` into Lambda zips on redeploy. Legacy scoring and production monitor will fail on SAM redeploy without a fix (move `data/` inside `src/`, or change `CodeUri` to `.`). **This is untested since the AWS stack is deleted.** The Docker image is unaffected — the Dockerfile copies `data/` explicitly.
+Moved canonical baseline fingerprint to `src/data/baseline_output.json`. Since `template.yaml` uses `CodeUri: src/`, `sam build` now automatically bundles `data/baseline_output.json` into every Lambda function package (verified in `.aws-sam/build/ScoreSessionFunction/data/baseline_output.json`). Handlers resolve paths relative to their module package root (`os.path.dirname(os.path.dirname(os.path.abspath(__file__)))`), ensuring identical path resolution in Lambda (`/var/task/data/baseline_output.json`), local dev, and Docker (`/app/src/data/baseline_output.json`). Dockerfile was updated so `COPY src/ src/` includes the baseline, maintaining single canonical copy without duplicate files. Tests in `tests/test_storage_contract.py` verify that the baseline resolves and is valid from the handler package path.
+
+#### SAM Build Verification
+
+Verified via `sam build`:
+- `ScoreSessionFunction`: contains `data/` directory and `storage/` package
+- `ScoreSessionFunction/data`: contains `baseline_output.json` (34,359 bytes)
+- `RegisterAgentFunction/storage`: contains all 6 storage backend files (`base.py`, `dynamodb.py`, `factory.py`, `firestore.py`, `memory.py`, `__init__.py`)
+- `src/requirements.txt`: does not include `google-cloud-firestore` or `fastapi` (clean Lambda package)
 
 ### Verification
 
@@ -1024,7 +1031,9 @@ HEALTH CHECK: 200 {"status":"ok","storage":"memory"}
 ======================================================================
 ```
 
-#### Phase 1 tests — STILL PASSING
+#### Phase 1 & 2 tests — STILL PASSING
 
-- `pytest tests/test_storage_contract.py` (STORAGE=memory): **15/15 passed** (0.12s)
+- `pytest tests/test_storage_contract.py` (STORAGE=memory): **16/16 passed** (including baseline package path resolution)
+- `pytest app/test_routes.py`: **10/10 passed**
 - `python tests/smoke_test_handlers.py` (STORAGE=memory): **7/7 passed**
+- Docker container verification: **`validate.py` 11/11**, **`verify_phase1.py` 7/7**, **`verify_phase2.py` 7/7**

@@ -18,9 +18,12 @@ def handler(event, context):
     """
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
+        package_root = os.path.dirname(current_dir)
         
         # Check for pre-computed baseline first (fast path for API Gateway)
-        baseline_path = os.path.join(current_dir, "..", "baseline_output.json")
+        baseline_path = os.path.join(package_root, "data", "baseline_output.json")
+        if not os.path.exists(baseline_path):
+            baseline_path = os.path.join(package_root, "baseline_output.json")
         if os.path.exists(baseline_path):
             with open(baseline_path, "r", encoding="utf-8") as f:
                 output = json.load(f)
