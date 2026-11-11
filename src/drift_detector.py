@@ -1,9 +1,10 @@
 # src/drift_detector.py
-import json
+import os
 import json
 import requests
 
-API_URL = "https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev/score-session"
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
+API_URL = f"{API_BASE_URL}/score-session"
 # We simulate 10 sessions. 
 # Sessions 1-3 are normal (lookups). 
 # Sessions 4-10 represent the "drift" (going crazy with refunds and emails).

@@ -61,7 +61,7 @@ class Flagent:
 
     Args:
         api_url:  Base URL of the Flagent governance API
-                  (e.g. "https://xyz.execute-api.region.amazonaws.com/dev")
+                  (e.g. "https://your-flagent-host.example.com")
         api_key:  API key returned by /agents/register
         agent_id: The registered agent ID
         mode:     "shadow" (default, async non-blocking) or

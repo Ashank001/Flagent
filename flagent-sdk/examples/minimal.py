@@ -13,12 +13,14 @@ Run against the live API:
     python examples/minimal.py
 """
 
+import os
 from flagent import Flagent
 
 # ----- Configuration -----
-API_URL = "https://t2xtoo4zpg.execute-api.ap-south-1.amazonaws.com/dev"
-API_KEY = "YOUR_API_KEY_HERE"        # from POST /agents/register
-AGENT_ID = "YOUR_AGENT_ID_HERE"      # your registered agent_id
+# Reads API_BASE_URL from env or defaults to local server (or your deployed host, e.g. https://your-flagent-host.example.com)
+API_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
+API_KEY = os.environ.get("FLAGENT_API_KEY", "YOUR_API_KEY_HERE")        # from POST /agents/register
+AGENT_ID = os.environ.get("FLAGENT_AGENT_ID", "YOUR_AGENT_ID_HERE")      # your registered agent_id
 
 # ----- 1. Create client -----
 fg = Flagent(
